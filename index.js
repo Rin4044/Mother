@@ -1,8 +1,21 @@
 const { Client, GatewayIntentBits, Collection, MessageFlags } = require('discord.js');
-const { token } = require('./config.json');
+require('dotenv').config();
 const path = require('path');
 const fs = require('fs');
 const { Profiles } = require('./database.js');
+
+let token = process.env.DISCORD_TOKEN || null;
+if (!token) {
+    try {
+        token = require('./config.json').token;
+    } catch (_) {
+        token = null;
+    }
+}
+
+if (!token) {
+    throw new Error('Missing bot token. Set DISCORD_TOKEN in environment.');
+}
 
 const client = new Client({
     intents: [
