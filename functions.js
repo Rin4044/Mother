@@ -1,9 +1,29 @@
 const { REST } = require('@discordjs/rest');
 const { Routes } = require('discord-api-types/v10');
-const { token, clientId } = require('./config.json');
 const { Collection } = require('discord.js');
 const fs = require('fs');
 const path = require('path');
+require('dotenv').config();
+
+let token = process.env.DISCORD_TOKEN || null;
+let clientId = process.env.DISCORD_CLIENT_ID || process.env.CLIENT_ID || null;
+
+if (!token || !clientId) {
+    try {
+        const localConfig = require('./config.json');
+        token = token || localConfig.token;
+        clientId = clientId || localConfig.clientId;
+    } catch (_) {
+        // ignore local config fallback errors on hosted envs
+    }
+}
+
+if (!token) {
+    throw new Error('Missing DISCORD_TOKEN for command deployment.');
+}
+if (!clientId) {
+    throw new Error('Missing DISCORD_CLIENT_ID for command deployment.');
+}
 
 const rest = new REST({ version: '10' }).setToken(token);
 
