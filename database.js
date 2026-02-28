@@ -30,6 +30,7 @@ const SpawnInstances = require('./utils/models/SpawnInstances')(sequelize);
 const TutorialProgress = require('./utils/models/TutorialProgress')(sequelize);
 const RaidInstances = require('./utils/models/RaidInstances')(sequelize);
 const InventoryItems = require('./utils/models/InventoryItems')(sequelize);
+const BotLogConfig = require('./utils/models/BotLogConfig')(sequelize);
 
 Profiles.hasMany(UserSkills, { foreignKey: 'profileId', onDelete: 'CASCADE' });
 UserSkills.belongsTo(Profiles, { foreignKey: 'profileId' });
@@ -296,5 +297,6 @@ module.exports = {
     SpawnInstances,
     TutorialProgress,
     RaidInstances,
-    InventoryItems
+    InventoryItems,
+    BotLogConfig
 };

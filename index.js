@@ -4,6 +4,7 @@ const path = require('path');
 const fs = require('fs');
 const http = require('http');
 const { Profiles } = require('./database.js');
+const { updateAllGuildStatuses, sendCrashReport } = require('./utils/botLogService');
 
 let token = process.env.DISCORD_TOKEN || null;
 if (!token) {
@@ -44,12 +45,83 @@ const client = new Client({
     ]
 });
 
+const disconnectRestartMs = Number(process.env.DISCORD_DISCONNECT_RESTART_MS || 180000);
+let disconnectRestartTimer = null;
+let fatalExitInProgress = false;
+
+function clearDisconnectRestartTimer() {
+    if (disconnectRestartTimer) {
+        clearTimeout(disconnectRestartTimer);
+        disconnectRestartTimer = null;
+    }
+}
+
+function scheduleDisconnectRestart(reason) {
+    if (!Number.isInteger(disconnectRestartMs) || disconnectRestartMs <= 0) {
+        return;
+    }
+    if (disconnectRestartTimer) {
+        return;
+    }
+
+    console.warn(`Disconnect watchdog armed (${Math.round(disconnectRestartMs / 1000)}s): ${reason}`);
+    disconnectRestartTimer = setTimeout(() => {
+        const watchdogError = new Error('Discord disconnect watchdog timeout');
+        handleFatalExit('disconnect_watchdog_timeout', watchdogError);
+    }, disconnectRestartMs);
+}
+
+function normalizeError(value) {
+    if (value instanceof Error) {
+        return value;
+    }
+    if (typeof value === 'string') {
+        return new Error(value);
+    }
+    if (value === null || value === undefined) {
+        return new Error(String(value));
+    }
+    try {
+        return new Error(JSON.stringify(value));
+    } catch {
+        return new Error(String(value));
+    }
+}
+
+async function handleFatalExit(context, rawError) {
+    if (fatalExitInProgress) {
+        return;
+    }
+    fatalExitInProgress = true;
+
+    const error = normalizeError(rawError);
+    console.error(`Fatal error (${context}):`, error);
+
+    try {
+        await sendCrashReport(client, error, context);
+    } catch (reportError) {
+        console.error('Failed to send crash report:', reportError);
+    }
+
+    try {
+        await updateAllGuildStatuses(client, 'restarting', `Fatal error: ${context}`);
+    } catch (statusError) {
+        console.error('Failed to update status to restarting:', statusError);
+    }
+
+    setTimeout(() => process.exit(1), 500).unref();
+}
+
 process.on('unhandledRejection', (reason) => {
-    console.error('Unhandled promise rejection:', reason);
+    const error = normalizeError(reason);
+    console.error('Unhandled promise rejection:', error);
+    sendCrashReport(client, error, 'unhandledRejection').catch((reportError) => {
+        console.error('Failed to send unhandled rejection report:', reportError);
+    });
 });
 
 process.on('uncaughtException', (error) => {
-    console.error('Uncaught exception:', error);
+    handleFatalExit('uncaughtException', error);
 });
 
 client.on('error', (error) => {
@@ -62,14 +134,32 @@ client.on('shardError', (error, shardId) => {
 
 client.on('shardDisconnect', (event, shardId) => {
     console.warn(`Discord shard ${shardId} disconnected (code: ${event?.code ?? 'unknown'})`);
+    updateAllGuildStatuses(client, 'offline', `Shard ${shardId} disconnected (code: ${event?.code ?? 'unknown'})`).catch(() => {});
+    scheduleDisconnectRestart(`shard ${shardId} disconnected`);
 });
 
 client.on('shardReconnecting', (shardId) => {
     console.warn(`Discord shard ${shardId} reconnecting...`);
+    updateAllGuildStatuses(client, 'restarting', `Shard ${shardId} reconnecting`).catch(() => {});
 });
 
 client.on('shardResume', (replayedEvents, shardId) => {
     console.log(`Discord shard ${shardId} resumed (${replayedEvents} replayed events).`);
+    clearDisconnectRestartTimer();
+    updateAllGuildStatuses(client, 'online', `Shard ${shardId} resumed (${replayedEvents} replayed events)`).catch(() => {});
+});
+
+client.on('ready', () => {
+    clearDisconnectRestartTimer();
+    updateAllGuildStatuses(client, 'online', 'Bot is fully connected.').catch(() => {});
+});
+
+process.on('SIGINT', () => {
+    updateAllGuildStatuses(client, 'offline', 'Process received SIGINT.').finally(() => process.exit(0));
+});
+
+process.on('SIGTERM', () => {
+    updateAllGuildStatuses(client, 'offline', 'Process received SIGTERM.').finally(() => process.exit(0));
 });
 
 const cooldowns = new Map();
@@ -150,4 +240,6 @@ client.on('interactionCreate', async (interaction) => {
     }
 });
 
-client.login(token);
+client.login(token).catch((error) => {
+    handleFatalExit('login_failure', error);
+});
