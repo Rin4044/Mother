@@ -2,6 +2,7 @@ const { Client, GatewayIntentBits, Collection, MessageFlags } = require('discord
 require('dotenv').config();
 const path = require('path');
 const fs = require('fs');
+const http = require('http');
 const { Profiles } = require('./database.js');
 
 let token = process.env.DISCORD_TOKEN || null;
@@ -15,6 +16,23 @@ if (!token) {
 
 if (!token) {
     throw new Error('Missing bot token. Set DISCORD_TOKEN in environment.');
+}
+
+const webPort = Number(process.env.PORT);
+if (Number.isInteger(webPort) && webPort > 0) {
+    const healthServer = http.createServer((req, res) => {
+        if (req.url === '/health') {
+            res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
+            res.end('ok');
+            return;
+        }
+        res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
+        res.end('Mother bot is running');
+    });
+
+    healthServer.listen(webPort, '0.0.0.0', () => {
+        console.log(`Health server listening on port ${webPort}`);
+    });
 }
 
 const client = new Client({
