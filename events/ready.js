@@ -27,53 +27,67 @@ module.exports = {
             }]
         });
 
+        let schedulerRunning = false;
         setInterval(async () => {
-            const channels = await SpawnChannels.findAll();
-            const now = Date.now();
+            if (schedulerRunning) return;
+            schedulerRunning = true;
 
-            for (const channel of channels) {
-                const config = await SpawnConfig.findOne({
-                    where: { guildId: channel.guildId }
-                });
+            try {
+                const channels = await SpawnChannels.findAll();
+                const now = Date.now();
 
-                if (!config || !config.enabled) continue;
+                for (const channel of channels) {
+                    try {
+                        const config = await SpawnConfig.findOne({
+                            where: { guildId: channel.guildId }
+                        });
 
-                const expiredInstances = await SpawnInstances.findAll({
-                    where: {
-                        spawnChannelId: channel.id,
-                        despawnAt: { [Op.lte]: now }
-                    }
-                });
+                        if (!config || !config.enabled) continue;
 
-                if (expiredInstances.length) {
-                    const discordChannel = await client.channels.fetch(channel.channelId).catch(() => null);
-
-                    for (const instance of expiredInstances) {
-                        if (discordChannel) {
-                            if (instance.spawnMessageId) {
-                                try {
-                                    const spawnMessage = await discordChannel.messages.fetch(instance.spawnMessageId);
-                                    await spawnMessage.edit({
-                                        content: `\u26A0 ${instance.monster.name} has disappeared.`,
-                                        components: []
-                                    });
-                                } catch (error) {
-                                    console.log('Failed to edit expired spawn message:', error.message);
-                                }
+                        const expiredInstances = await SpawnInstances.findAll({
+                            where: {
+                                spawnChannelId: channel.id,
+                                despawnAt: { [Op.lte]: now }
                             }
+                        });
 
-                            await discordChannel.send(
-                                `\u26A0 **${instance.monster.name} disappeared...**`
-                            );
+                        if (expiredInstances.length) {
+                            const discordChannel = await client.channels.fetch(channel.channelId).catch(() => null);
+
+                            for (const instance of expiredInstances) {
+                                if (discordChannel) {
+                                    if (instance.spawnMessageId) {
+                                        try {
+                                            const spawnMessage = await discordChannel.messages.fetch(instance.spawnMessageId);
+                                            await spawnMessage.edit({
+                                                content: `\u26A0 ${instance.monster.name} has disappeared.`,
+                                                components: []
+                                            });
+                                        } catch (error) {
+                                            console.log('Failed to edit expired spawn message:', error.message);
+                                        }
+                                    }
+
+                                    await discordChannel.send(
+                                        `\u26A0 **${instance.monster.name} disappeared...**`
+                                    );
+                                }
+
+                                await instance.destroy();
+                            }
                         }
 
-                        await instance.destroy();
+                        if (!channel.nextSpawnAt || now >= channel.nextSpawnAt) {
+                            await spawnMonster(client, channel, config);
+                        }
+                    } catch (channelError) {
+                        console.error(`Spawn scheduler error on channel ${channel?.id ?? 'unknown'}:`, channelError);
                     }
                 }
-
-                if (!channel.nextSpawnAt || now >= channel.nextSpawnAt) {
-                    await spawnMonster(client, channel, config);
-                }
+            } catch (error) {
+                console.error('Spawn scheduler tick failed:', error);
+            } finally {
+                schedulerRunning = false;
             }
         }, 30000);
 

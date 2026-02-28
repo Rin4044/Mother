@@ -44,6 +44,34 @@ const client = new Client({
     ]
 });
 
+process.on('unhandledRejection', (reason) => {
+    console.error('Unhandled promise rejection:', reason);
+});
+
+process.on('uncaughtException', (error) => {
+    console.error('Uncaught exception:', error);
+});
+
+client.on('error', (error) => {
+    console.error('Discord client error:', error);
+});
+
+client.on('shardError', (error, shardId) => {
+    console.error(`Discord shard ${shardId} error:`, error);
+});
+
+client.on('shardDisconnect', (event, shardId) => {
+    console.warn(`Discord shard ${shardId} disconnected (code: ${event?.code ?? 'unknown'})`);
+});
+
+client.on('shardReconnecting', (shardId) => {
+    console.warn(`Discord shard ${shardId} reconnecting...`);
+});
+
+client.on('shardResume', (replayedEvents, shardId) => {
+    console.log(`Discord shard ${shardId} resumed (${replayedEvents} replayed events).`);
+});
+
 const cooldowns = new Map();
 
 client.commands = new Collection();

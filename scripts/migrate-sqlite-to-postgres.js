@@ -12,6 +12,10 @@ const PG_PORT = Number(process.env.PG_LOCAL_PORT || 5432);
 const PG_USER = process.env.PG_LOCAL_USER || 'postgres';
 const PG_PASSWORD = process.env.PG_LOCAL_PASSWORD || 'mother_local_pg';
 const PG_DB = process.env.PG_LOCAL_DB || 'mother';
+const LOCAL_DATABASE_URL = `postgres://${PG_USER}:${encodeURIComponent(PG_PASSWORD)}@127.0.0.1:${PG_PORT}/${PG_DB}`;
+const TARGET_DATABASE_URL = process.env.MIGRATION_TARGET_DATABASE_URL || process.env.DATABASE_URL || LOCAL_DATABASE_URL;
+const TARGET_DB_SSL = (process.env.MIGRATION_TARGET_DB_SSL || process.env.DB_SSL || 'false').toLowerCase() !== 'false';
+const TARGET_IS_LOCAL = /@(?:127\.0\.0\.1|localhost):/i.test(TARGET_DATABASE_URL);
 const SKIP_EMBEDDED_BOOT = String(process.env.SKIP_EMBEDDED_BOOT || '').toLowerCase() === 'true';
 
 function initModels(sequelize) {
@@ -112,7 +116,7 @@ async function migrate() {
     const backupPath = await ensureBackup();
     console.log(`SQLite backup created: ${backupPath}`);
 
-    if (!SKIP_EMBEDDED_BOOT) {
+    if (TARGET_IS_LOCAL && !SKIP_EMBEDDED_BOOT) {
         const pg = new EmbeddedPostgres({
             databaseDir: EMBEDDED_DB_DIR,
             user: PG_USER,
@@ -137,9 +141,12 @@ async function migrate() {
         storage: SQLITE_PATH,
         logging: false
     });
-    const targetSequelize = new Sequelize(`postgres://${PG_USER}:${encodeURIComponent(PG_PASSWORD)}@127.0.0.1:${PG_PORT}/${PG_DB}`, {
+    const targetSequelize = new Sequelize(TARGET_DATABASE_URL, {
         dialect: 'postgres',
-        logging: false
+        logging: false,
+        dialectOptions: {
+            ssl: TARGET_DB_SSL ? { require: true, rejectUnauthorized: false } : false
+        }
     });
 
     const source = initModels(sourceSequelize);
@@ -195,27 +202,31 @@ async function migrate() {
     await sourceSequelize.close();
     await targetSequelize.close();
 
-    const envPath = path.resolve(__dirname, '..', '.env');
-    const dbUrl = `postgres://${PG_USER}:${encodeURIComponent(PG_PASSWORD)}@127.0.0.1:${PG_PORT}/${PG_DB}`;
-    const envLines = [
-        `DATABASE_URL=${dbUrl}`,
-        'DB_SSL=false',
-        'USE_EMBEDDED_POSTGRES=true'
-    ];
-
-    const existing = fs.existsSync(envPath) ? fs.readFileSync(envPath, 'utf8') : '';
-    const merged = existing
-        .split(/\r?\n/)
-        .filter(Boolean)
-        .filter((line) => !line.startsWith('DATABASE_URL=') && !line.startsWith('DB_SSL=') && !line.startsWith('USE_EMBEDDED_POSTGRES='));
-    fs.writeFileSync(envPath, [...merged, ...envLines].join('\n') + '\n', 'utf8');
-
     console.log('\nMigration complete.');
-    console.log(`Embedded Postgres dir: ${EMBEDDED_DB_DIR}`);
-    console.log(`Connection URL: ${dbUrl}`);
-    console.log('Updated .env with DATABASE_URL, DB_SSL=false, USE_EMBEDDED_POSTGRES=true');
-    console.log('Keep Postgres running with: npm run db:start');
-    console.log('Run bot with: npm run bot:start');
+    console.log(`Target URL: ${TARGET_DATABASE_URL}`);
+    if (TARGET_IS_LOCAL) {
+        const envPath = path.resolve(__dirname, '..', '.env');
+        const envLines = [
+            `DATABASE_URL=${LOCAL_DATABASE_URL}`,
+            'DB_SSL=false',
+            'USE_EMBEDDED_POSTGRES=true'
+        ];
+
+        const existing = fs.existsSync(envPath) ? fs.readFileSync(envPath, 'utf8') : '';
+        const merged = existing
+            .split(/\r?\n/)
+            .filter(Boolean)
+            .filter((line) => !line.startsWith('DATABASE_URL=') && !line.startsWith('DB_SSL=') && !line.startsWith('USE_EMBEDDED_POSTGRES='));
+        fs.writeFileSync(envPath, [...merged, ...envLines].join('\n') + '\n', 'utf8');
+        console.log(`Embedded Postgres dir: ${EMBEDDED_DB_DIR}`);
+        console.log(`Connection URL: ${LOCAL_DATABASE_URL}`);
+        console.log('Updated .env with DATABASE_URL, DB_SSL=false, USE_EMBEDDED_POSTGRES=true');
+        console.log('Keep Postgres running with: npm run db:start');
+        console.log('Run bot with: npm run bot:start');
+    } else {
+        console.log(`SSL enabled for target: ${TARGET_DB_SSL}`);
+        console.log('No local .env rewrite was done because target is remote.');
+    }
 }
 
 migrate().catch((err) => {
