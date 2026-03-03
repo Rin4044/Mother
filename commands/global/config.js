@@ -1,13 +1,15 @@
 const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, PermissionsBitField, MessageFlags, ChannelType } = require('discord.js');
 
-const { SpawnConfig, SpawnChannels, BotLogConfig } = require('../../database');
+const { SpawnConfig, SpawnChannels, BotLogConfig, AdventurerGuildConfig } = require('../../database');
 const { updateGuildStatus } = require('../../utils/botLogService');
+const { upsertAdventurerGuildPanel } = require('../../utils/adventurerGuildService');
+const { assertWhitelistedAdmin } = require('../../utils/adminAccessService');
 const MAX_SPAWN_CHANNELS = 25;
 
 function buildSpawnPanel(config, channels, ownerId) {
     const channelList = channels.length
         ? channels.map((c) =>
-            `<#${c.channelId}> -> Monsters: ${Array.isArray(c.monsterIds) && c.monsterIds.length ? c.monsterIds.join(',') : 'legacy levels'} | Timer: ${c.baseTimer ?? config.baseTimer}s +/- ${c.variance ?? config.variance}s | XP x${c.xpMultiplier ?? 1}`
+            `<#${c.channelId}> -> Monsters: ${Array.isArray(c.monsterIds) && c.monsterIds.length ? c.monsterIds.join(',') : 'legacy levels'} | Timer: ${c.baseTimer ?? config.baseTimer}s +/- ${c.variance ?? config.variance}s | XP x${c.xpMultiplier ?? 1} | Terrain: ${c.terrainDamageType || 'None'}`
         ).join('\n')
         : 'No spawn channels configured.';
 
@@ -67,6 +69,36 @@ module.exports = {
                         .setDescription('Channel that receives crash reports (optional)')
                         .setRequired(false)
                         .addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement)
+                )
+        )
+        .addSubcommand((sub) =>
+            sub.setName('adminlog')
+                .setDescription('Configure admin action log channel')
+                .addChannelOption((option) =>
+                    option
+                        .setName('channel')
+                        .setDescription('Channel that will receive admin action logs')
+                        .setRequired(true)
+                        .addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement)
+                )
+        )
+        .addSubcommand((sub) =>
+            sub.setName('advguild')
+                .setDescription('Configure the Adventurer Guild counter panel')
+                .addChannelOption((option) =>
+                    option
+                        .setName('channel')
+                        .setDescription('Channel that will host the guild counter panel')
+                        .setRequired(true)
+                        .addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement)
+                )
+                .addIntegerOption((option) =>
+                    option
+                        .setName('quest_refresh_seconds')
+                        .setDescription('Future quest board refresh timer (seconds)')
+                        .setRequired(false)
+                        .setMinValue(60)
+                        .setMaxValue(86400)
                 )
         ),
 
@@ -148,6 +180,108 @@ module.exports = {
                     `Status channel: <#${statusChannel.id}>\n` +
                     `Crash channel: <#${crashChannel.id}>\n` +
                     `Status embed: ${statusInitialized ? 'ready' : 'failed to post (check channel access)'}`,
+                flags: MessageFlags.Ephemeral
+            });
+        }
+
+        if (subcommand === 'advguild') {
+            const panelChannel = interaction.options.getChannel('channel', true);
+            const questRefreshSeconds = interaction.options.getInteger('quest_refresh_seconds') ?? 3600;
+
+            if (!panelChannel?.isTextBased()) {
+                return interaction.reply({
+                    content: 'Adventurer Guild channel must be a text channel.',
+                    flags: MessageFlags.Ephemeral
+                });
+            }
+
+            const me = interaction.guild.members.me;
+            const panelPerms = panelChannel.permissionsFor(me);
+            if (!panelPerms?.has([PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.EmbedLinks])) {
+                return interaction.reply({
+                    content: 'I need `Send Messages` and `Embed Links` permissions in this channel.',
+                    flags: MessageFlags.Ephemeral
+                });
+            }
+
+            const [config] = await AdventurerGuildConfig.findOrCreate({
+                where: { guildId: interaction.guild.id },
+                defaults: {
+                    guildId: interaction.guild.id,
+                    panelChannelId: panelChannel.id,
+                    panelMessageId: null,
+                    questRefreshSeconds
+                }
+            });
+
+            const channelChanged = config.panelChannelId !== panelChannel.id;
+            config.panelChannelId = panelChannel.id;
+            config.questRefreshSeconds = questRefreshSeconds;
+            if (channelChanged) {
+                config.panelMessageId = null;
+            }
+            await config.save();
+
+            const panelReady = await upsertAdventurerGuildPanel(interaction.client, interaction.guild.id).catch((error) => {
+                console.error(`Failed to initialize adventurer guild panel for guild ${interaction.guild.id}:`, error?.message || error);
+                return false;
+            });
+
+            return interaction.reply({
+                content:
+                    `Adventurer Guild configuration updated.\n` +
+                    `Panel channel: <#${panelChannel.id}>\n` +
+                    `Quest refresh: ${questRefreshSeconds}s\n` +
+                    `Panel embed: ${panelReady ? 'ready' : 'failed to post (check channel access)'}`,
+                flags: MessageFlags.Ephemeral
+            });
+        }
+
+        if (subcommand === 'adminlog') {
+            const allowed = await assertWhitelistedAdmin(interaction, {
+                logDenied: true,
+                commandName: 'config',
+                actionGroup: 'adminlog',
+                actionName: 'set_channel'
+            });
+            if (!allowed) return;
+
+            const adminLogChannel = interaction.options.getChannel('channel', true);
+
+            if (!adminLogChannel?.isTextBased()) {
+                return interaction.reply({
+                    content: 'Admin log channel must be a text channel.',
+                    flags: MessageFlags.Ephemeral
+                });
+            }
+
+            const me = interaction.guild.members.me;
+            const perms = adminLogChannel.permissionsFor(me);
+            if (!perms?.has([PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.EmbedLinks])) {
+                return interaction.reply({
+                    content: 'I need `Send Messages` and `Embed Links` permissions in the admin log channel.',
+                    flags: MessageFlags.Ephemeral
+                });
+            }
+
+            const [config] = await BotLogConfig.findOrCreate({
+                where: { guildId: interaction.guild.id },
+                defaults: {
+                    guildId: interaction.guild.id,
+                    statusChannelId: null,
+                    crashChannelId: null,
+                    statusMessageId: null,
+                    adminLogChannelId: adminLogChannel.id
+                }
+            });
+
+            config.adminLogChannelId = adminLogChannel.id;
+            await config.save();
+
+            return interaction.reply({
+                content:
+                    `Admin log configuration updated.\n` +
+                    `Admin log channel: <#${adminLogChannel.id}>`,
                 flags: MessageFlags.Ephemeral
             });
         }

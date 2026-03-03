@@ -41,6 +41,21 @@ module.exports = (sequelize) => {
       type: DataTypes.JSON,
       allowNull: false
     },
+    phase: {
+      type: DataTypes.INTEGER,
+      allowNull: false,
+      defaultValue: 1
+    },
+    bossMechanicState: {
+      type: DataTypes.JSON,
+      allowNull: false,
+      defaultValue: {}
+    },
+    raidLog: {
+      type: DataTypes.JSON,
+      allowNull: false,
+      defaultValue: []
+    },
     participants: {
       type: DataTypes.JSON,
       allowNull: false,

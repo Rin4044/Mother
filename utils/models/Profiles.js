@@ -117,6 +117,18 @@ module.exports = (sequelize) => {
       type: DataTypes.JSON,
       allowNull: false,
       defaultValue: {}
+    },
+
+    playerGuildId: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      defaultValue: null
+    },
+
+    playerGuildJoinedAt: {
+      type: DataTypes.DATE,
+      allowNull: true,
+      defaultValue: null
     }
 
   }, {

@@ -1,7 +1,7 @@
 const { SlashCommandBuilder, EmbedBuilder, MessageFlags } = require('discord.js');
 const { Profiles } = require('../../database');
 const { getInventory } = require('../../utils/inventoryService');
-const { formatCoreItemLabel } = require('../../utils/coreEmoji');
+const { formatCoreItemLabel, formatCrystalLabel } = require('../../utils/coreEmoji');
 
 const CORE_ORDER = {
     'Mediocre Monster Core': 1,
@@ -12,7 +12,10 @@ const CORE_ORDER = {
 };
 
 function isPotionItem(itemName = '') {
-    return /^XP Potion\s+/i.test(String(itemName || '').trim());
+    const name = String(itemName || '').trim();
+    return /^XP Potion\s+/i.test(name)
+        || /^Healing Potion$/i.test(name)
+        || /^Poison Potion$/i.test(name);
 }
 
 function toItemLine(entry) {
@@ -63,7 +66,7 @@ module.exports = {
             .setColor('#1f1f23')
             .setTitle(`${profile.name}'s Inventory`)
             .setDescription(
-                `Crystals: ${profile.crystals || 0}\n\n` +
+                `${formatCrystalLabel(profile.crystals || 0)}\n\n` +
                 `Monster Cores\n${coreSection}\n` +
                 `--------------------\n` +
                 `Potions\n${potionSection}\n` +

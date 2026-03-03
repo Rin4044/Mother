@@ -1,15 +1,13 @@
 const { SlashCommandBuilder, EmbedBuilder, MessageFlags } = require('discord.js');
-const { Profiles } = require('../../database');
+const { sequelize, Profiles } = require('../../database');
 const {
-    getInventoryQuantity,
-    consumeInventoryCosts,
     addInventoryItem
 } = require('../../utils/inventoryService');
-const { formatCoreItemLabel } = require('../../utils/coreEmoji');
 const {
     getActiveXpBoost,
     formatRemainingTimestamp
 } = require('../../utils/xpBoostService');
+const { formatCrystalLabel, formatRaidKeyLabel, formatCoreItemLabel } = require('../../utils/coreEmoji');
 
 const SHOP_OFFERS = {
     xp_5_15m: {
@@ -18,9 +16,7 @@ const SHOP_OFFERS = {
         rewardType: 'item',
         itemName: 'XP Potion +5% (15m)',
         quantity: 1,
-        costs: [
-            { itemName: 'Mediocre Monster Core', quantity: 10 }
-        ]
+        costCrystals: 400
     },
     xp_10_20m: {
         label: 'XP Potion +10% (20m)',
@@ -28,9 +24,7 @@ const SHOP_OFFERS = {
         rewardType: 'item',
         itemName: 'XP Potion +10% (20m)',
         quantity: 1,
-        costs: [
-            { itemName: 'Cracked Monster Core', quantity: 10 }
-        ]
+        costCrystals: 900
     },
     xp_20_10m: {
         label: 'XP Potion +20% (10m)',
@@ -38,9 +32,7 @@ const SHOP_OFFERS = {
         rewardType: 'item',
         itemName: 'XP Potion +20% (10m)',
         quantity: 1,
-        costs: [
-            { itemName: 'Solid Monster Core', quantity: 10 }
-        ]
+        costCrystals: 1800
     },
     xp_25_1h: {
         label: 'XP Potion +25% (1h)',
@@ -48,9 +40,7 @@ const SHOP_OFFERS = {
         rewardType: 'item',
         itemName: 'XP Potion +25% (1h)',
         quantity: 1,
-        costs: [
-            { itemName: 'Superior Monster Core', quantity: 10 }
-        ]
+        costCrystals: 4200
     },
     xp_50_20m: {
         label: 'XP Potion +50% (20m)',
@@ -58,9 +48,7 @@ const SHOP_OFFERS = {
         rewardType: 'item',
         itemName: 'XP Potion +50% (20m)',
         quantity: 1,
-        costs: [
-            { itemName: 'Primal Monster Core', quantity: 1 }
-        ]
+        costCrystals: 12000
     },
     xp_75_1h: {
         label: 'XP Potion +75% (1h)',
@@ -68,9 +56,7 @@ const SHOP_OFFERS = {
         rewardType: 'item',
         itemName: 'XP Potion +75% (1h)',
         quantity: 1,
-        costs: [
-            { itemName: 'Primal Monster Core', quantity: 10 }
-        ]
+        costCrystals: 36000
     },
     name_change_ticket: {
         label: 'Name Change Ticket',
@@ -78,16 +64,22 @@ const SHOP_OFFERS = {
         rewardType: 'item',
         itemName: 'Name Change Ticket',
         quantity: 1,
-        costs: [
-            { itemName: 'Primal Monster Core', quantity: 1 }
-        ]
+        costCrystals: 25000
+    },
+    raid_key: {
+        label: 'Raid Key',
+        description: 'Required by /raid create',
+        rewardType: 'item',
+        itemName: 'Raid Key',
+        quantity: 1,
+        costCrystals: 5000
     }
 };
 
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('shop')
-        .setDescription('Spend monster cores for consumables.')
+        .setDescription('Spend crystals for consumables.')
         .addSubcommand((sub) =>
             sub.setName('view')
                 .setDescription('Show shop offers and your balances.')
@@ -107,7 +99,8 @@ module.exports = {
                             { name: '+25% for 1h', value: 'xp_25_1h' },
                             { name: '+50% for 20m', value: 'xp_50_20m' },
                             { name: '+75% for 1h', value: 'xp_75_1h' },
-                            { name: 'Name Change Ticket (1 Primal)', value: 'name_change_ticket' }
+                            { name: 'Name Change Ticket', value: 'name_change_ticket' },
+                            { name: 'Raid Key', value: 'raid_key' }
                         )
                 )
         ),
@@ -135,10 +128,9 @@ module.exports = {
 async function handleView(interaction, profile) {
     const lines = [];
     for (const offer of Object.values(SHOP_OFFERS)) {
-        const costsText = await formatCostsWithBalance(profile.id, offer.costs);
-        lines.push(`**${offer.label}**`);
+        lines.push(`**${getOfferDisplayLabel(offer)}**`);
         lines.push(`${offer.description}`);
-        lines.push(`Cost: ${costsText}`);
+        lines.push(`Cost: ${formatCrystalLabel(offer.costCrystals)}`);
         lines.push('');
     }
 
@@ -149,8 +141,8 @@ async function handleView(interaction, profile) {
 
     const embed = new EmbedBuilder()
         .setColor('#1f1f23')
-        .setTitle('Core Shop')
-        .setDescription(`${boostText}\n\n${lines.join('\n').trim()}`);
+        .setTitle('Crystal Shop')
+        .setDescription(`${formatCrystalLabel(profile.crystals || 0)}\n${boostText}\n\n${lines.join('\n').trim()}`);
 
     return interaction.reply({
         embeds: [embed],
@@ -168,10 +160,31 @@ async function handleBuy(interaction, profile) {
         });
     }
 
-    const paid = await consumeInventoryCosts(profile.id, offer.costs);
-    if (!paid) {
+    const purchaseResult = await sequelize.transaction(async (transaction) => {
+        const txProfile = await Profiles.findByPk(profile.id, {
+            transaction,
+            lock: transaction.LOCK.UPDATE
+        });
+
+        if (!txProfile) {
+            throw new Error('PROFILE_NOT_FOUND');
+        }
+
+        const currentCrystals = Math.max(0, Number(txProfile.crystals) || 0);
+        const cost = Math.max(0, Number(offer.costCrystals) || 0);
+        if (currentCrystals < cost) {
+            return { ok: false, currentCrystals, cost };
+        }
+
+        txProfile.crystals = currentCrystals - cost;
+        await txProfile.save({ transaction });
+
+        return { ok: true, currentCrystals: txProfile.crystals, cost };
+    });
+
+    if (!purchaseResult.ok) {
         return interaction.reply({
-            content: `Not enough cores for **${offer.label}**.`,
+            content: `Not enough crystals for **${getOfferDisplayLabel(offer)}**. Need ${formatCrystalLabel(purchaseResult.cost)}, you have ${formatCrystalLabel(purchaseResult.currentCrystals)}.`,
             flags: MessageFlags.Ephemeral
         });
     }
@@ -179,7 +192,7 @@ async function handleBuy(interaction, profile) {
     if (offer.rewardType === 'item') {
         await addInventoryItem(profile.id, offer.itemName, offer.quantity || 1);
         return interaction.reply({
-            content: `Purchased **${offer.label}** and added to your inventory.`,
+            content: `Purchased **${getOfferDisplayLabel(offer)}** for ${formatCrystalLabel(purchaseResult.cost)}. Remaining: ${formatCrystalLabel(purchaseResult.currentCrystals)}. Added to your inventory.`,
             flags: MessageFlags.Ephemeral
         });
     }
@@ -190,11 +203,14 @@ async function handleBuy(interaction, profile) {
     });
 }
 
-async function formatCostsWithBalance(profileId, costs) {
-    const parts = [];
-    for (const cost of costs) {
-        const qty = await getInventoryQuantity(profileId, cost.itemName);
-        parts.push(`${formatCoreItemLabel(cost.itemName)} x${cost.quantity} (you: ${qty})`);
+function getOfferDisplayLabel(offer) {
+    if (offer?.itemName === 'Raid Key') {
+        return formatRaidKeyLabel(offer.quantity || 1);
     }
-    return parts.join(' | ');
+    if (offer?.itemName) {
+        const qty = Math.max(1, Number(offer.quantity) || 1);
+        const base = formatCoreItemLabel(offer.itemName);
+        return qty > 1 ? `${base} x${qty}` : base;
+    }
+    return String(offer?.label || 'Unknown Offer');
 }

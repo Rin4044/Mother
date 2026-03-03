@@ -78,10 +78,11 @@ function defaultProgress() {
 function normalizeProgress(raw) {
     const base = defaultProgress();
     const src = raw && typeof raw === 'object' ? raw : {};
+    const next = { ...src };
     for (const key of Object.keys(base)) {
-        base[key] = Math.max(0, Number(src[key]) || 0);
+        next[key] = Math.max(0, Number(src[key]) || 0);
     }
-    return base;
+    return next;
 }
 
 function countStatusTicks(statusDamageByType) {
@@ -244,16 +245,24 @@ async function processRulerProgress(profile, context = {}) {
         txProfile.rulerProgress = progress;
         await txProfile.save({ transaction });
 
-        const [allSkills, allRulerTitles, ownedTitles, fightProgress] = await Promise.all([
-            UserSkills.findAll({
-                where: { profileId: txProfile.id },
-                include: [{ model: Skills, as: 'Skill', attributes: ['name'] }],
-                transaction
-            }),
-            Titles.findAll({ where: { name: Object.keys(RULER_REQUIREMENTS) }, transaction }),
-            UserTitles.findAll({ where: { profileId: txProfile.id }, transaction }),
-            FightProgress.findOne({ where: { profileId: txProfile.id }, transaction })
-        ]);
+        // Keep transaction-scoped queries sequential to avoid concurrent use of a single pg client.
+        const allSkills = await UserSkills.findAll({
+            where: { profileId: txProfile.id },
+            include: [{ model: Skills, as: 'Skill', attributes: ['name'] }],
+            transaction
+        });
+        const allRulerTitles = await Titles.findAll({
+            where: { name: Object.keys(RULER_REQUIREMENTS) },
+            transaction
+        });
+        const ownedTitles = await UserTitles.findAll({
+            where: { profileId: txProfile.id },
+            transaction
+        });
+        const fightProgress = await FightProgress.findOne({
+            where: { profileId: txProfile.id },
+            transaction
+        });
 
         const levelNow = Math.max(1, Number(context.levelAfterUpdate) || Number(txProfile.level) || 1);
         const tabooLevel = Math.max(

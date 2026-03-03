@@ -7,12 +7,21 @@ const { calculateScaling, executeTurn } = require('../../../utils/combatEngine')
 const { calculateXpForLevel } = require('../../../utils/xpUtils');
 const { calculatePlayerStats } = require('../../../utils/playerStats');
 const { rollLoot } = require('../../../utils/lootSystem');
-const { addInventoryItem } = require('../../../utils/inventoryService');
+const { addInventoryItem, consumeInventoryItem, getInventoryQuantity } = require('../../../utils/inventoryService');
 const { applyXpBoost } = require('../../../utils/xpBoostService');
 const { formatCoreItemLabel } = require('../../../utils/coreEmoji');
 const { resolveImage } = require('../../../utils/resolveProfileImage');
 const { processRulerProgress, countStatusTicks } = require('../../../utils/rulerTitleService');
 const { getMaxLevelForRace } = require('../../../utils/evolutionConfig');
+const passiveSkillAcquisitionService = require('../../../utils/passiveSkillAcquisitionService');
+const { processTitleAchievements } = require('../../../utils/titleAchievementService');
+const { isAbyssAttack } = require('../../../utils/abyssSkill');
+const { COMBAT_BALANCE, getHealPotionRatio, getHealPotionLabel } = require('../../../utils/combatBalanceConfig');
+const { incrementQuestKillProgress } = require('../../../utils/adventurerGuildQuestService');
+const { buildStatusModifiersFromSkills: buildStatusModifiersFromSkillsUtil } = require('../../../utils/combatStatusModifiers');
+const { grantRecoveryPassiveXpFromTurn } = require('../../../utils/recoveryPassiveXpService');
+const { recordJournalProgress } = require('../../../utils/journalService');
+const { recordGuildProgressByProfile } = require('../../../utils/playerGuildService');
 
 const {
     Profiles,
@@ -44,43 +53,60 @@ async function handleFightAttack(interaction) {
 
     const customIdParts = interaction.customId.split('_');
     const profileId = parseInt(customIdParts[customIdParts.length - 1], 10);
-    const skillId = parseInt(interaction.values[0], 10);
+    const selectedAction = String(interaction.values[0] || '').trim();
+    const isHealPotionAction = selectedAction === 'potion_heal';
+    const skillId = parseInt(selectedAction, 10);
 
-    if (isNaN(profileId) || isNaN(skillId)) return;
+    if (isNaN(profileId) || (!isHealPotionAction && isNaN(skillId))) return;
 
-    const [profile, skill, progress] = await Promise.all([
+    const [profile, progress] = await Promise.all([
         Profiles.findByPk(profileId),
-        Skills.findByPk(skillId),
         FightProgress.findOne({ where: { profileId } })
     ]);
-
-    if (!profile || !skill) return;
-    const hasKinEaterTitle = await profileHasTitle(profile.id, 'Kin Eater');
-
-    const userSkill = await UserSkills.findOne({
-        where: {
-            profileId: profile.id,
-            skillId: skill.id,
-            equippedSlot: { [Op.not]: null }
-        }
-    });
-
-    if (!userSkill) {
-        return interaction.followUp({
-            content: 'This skill is not equipped. Use /loadout equip first.',
-            flags: MessageFlags.Ephemeral
-        });
-    }
+    if (!profile) return;
 
     const allPlayerSkills = await UserSkills.findAll({
-        where: { profileId: profile.id }
+        where: { profileId: profile.id },
+        include: [{ model: Skills, as: 'Skill', required: false }]
     });
-    const playerStatusModifiers = buildStatusModifiersFromSkills(allPlayerSkills);
-
-    const combatSkill = {
-        ...skill.toJSON(),
-        power: calculateEffectiveSkillPower(skill.power, userSkill.level)
+    const playerStatusModifiers = buildStatusModifiersFromSkillsUtil(allPlayerSkills);
+    let skill = null;
+    let userSkill = null;
+    let hasKinEaterTitle = false;
+    let combatSkill = {
+        name: 'Heal Potion',
+        effect_type_main: 'Heal',
+        effect_type_specific: 'Other',
+        mp_cost: 0,
+        sp_cost: 0,
+        power: 0
     };
+
+    if (!isHealPotionAction) {
+        skill = await Skills.findByPk(skillId);
+        if (!skill) return;
+        hasKinEaterTitle = await profileHasTitle(profile.id, 'Kin Eater');
+
+        userSkill = await UserSkills.findOne({
+            where: {
+                profileId: profile.id,
+                skillId: skill.id,
+                equippedSlot: { [Op.not]: null }
+            }
+        });
+
+        if (!userSkill) {
+            return interaction.followUp({
+                content: 'This skill is not equipped. Use /loadout equip first.',
+                flags: MessageFlags.Ephemeral
+            });
+        }
+
+        combatSkill = {
+            ...skill.toJSON(),
+            power: calculateEffectiveSkillPower(skill.power, userSkill.level)
+        };
+    }
 
     // =====================================================
     // SPAWN MODE
@@ -98,6 +124,7 @@ async function handleFightAttack(interaction) {
         }
 
         const monster = spawnInstance.monster;
+        const spawnChannel = await SpawnChannels.findByPk(spawnInstance.spawnChannelId);
 
         if (Date.now() >= profile.combatState.timeoutAt) {
             spawnInstance.occupiedBy = null;
@@ -139,13 +166,28 @@ async function handleFightAttack(interaction) {
             }
         };
 
-        const insufficientReason = getInsufficientResourceReason(state.entityA, combatSkill);
-        if (insufficientReason) {
-            await interaction.followUp({
-                content: insufficientReason,
-                flags: MessageFlags.Ephemeral
-            });
-            return;
+        let potionHealAmount = 0;
+        if (isHealPotionAction) {
+            const consumed = await consumeInventoryItem(profile.id, 'Healing Potion', 1);
+            if (!consumed) {
+                await interaction.followUp({
+                    content: 'You do not have any **Healing Potion**.',
+                    flags: MessageFlags.Ephemeral
+                });
+                return;
+            }
+            const maxHp = Math.max(1, Number(state.entityA.maxHp) || Number(state.entityA.hp) || 1);
+            potionHealAmount = Math.max(1, Math.floor(maxHp * getHealPotionRatio()));
+            state.entityA.hp = Math.min(maxHp, Math.max(0, Number(state.entityA.hp) || 0) + potionHealAmount);
+        } else {
+            const insufficientReason = getInsufficientResourceReason(state.entityA, combatSkill);
+            if (insufficientReason) {
+                await interaction.followUp({
+                    content: insufficientReason,
+                    flags: MessageFlags.Ephemeral
+                });
+                return;
+            }
         }
 
         const monsterData = await Monsters.findByPk(monster.id, {
@@ -153,47 +195,92 @@ async function handleFightAttack(interaction) {
         });
 
         const monsterSkills = monsterData?.Skills || [];
-        const monsterStatusModifiers = buildStatusModifiersFromSkills(monsterSkills);
+        const monsterStatusModifiers = buildStatusModifiersFromSkillsUtil(monsterSkills);
         state.entityA.statusResistance = playerStatusModifiers.statusResistance;
         state.entityA.statusEnhancement = playerStatusModifiers.statusEnhancement;
         state.entityA.rulerPassives = playerStatusModifiers.rulerPassives;
         state.entityB.statusResistance = monsterStatusModifiers.statusResistance;
         state.entityB.statusEnhancement = monsterStatusModifiers.statusEnhancement;
         state.entityB.rulerPassives = monsterStatusModifiers.rulerPassives;
+        const monsterHpBeforeTurn = Math.max(0, Number(state.entityB.hp) || 0);
+        const monsterMaxHpForOneShot = Math.max(1, Number(state.entityB.maxHp) || monsterHpBeforeTurn || 1);
         const playerHpBeforeTurn = Math.max(0, Number(state.entityA.hp) || 0);
         const result = executeTurn(state, combatSkill, monsterSkills);
-        let turnSkillXpSummary = {};
-
-        const gainedSkillXp = calculatePveSkillXp({
-            uses: result.playerSkillUses || 0,
-            damageDone: result.playerDamageDone || 0,
-            monsterLevel: monster.level || 1,
-            towerTier: 1,
-            rarityXpMultiplier: monster.xpMultiplier || 1,
-            victory: result.victory
-        });
-        const skillProgress = await grantSkillXp(profile.id, skill.id, gainedSkillXp);
-        turnSkillXpSummary = appendSkillProgress(turnSkillXpSummary, skill, skillProgress);
-        const tabooProgress = await grantTabooXpFromSkillUse(
-            profile.id,
-            skill,
-            { monsterLevel: monster.level || 1, towerTier: 1, victory: result.victory, hasKinEaterTitle }
+        if (isHealPotionAction) {
+            result.log = sanitizePotionTurnLog(result.log, potionHealAmount);
+        }
+        const terrainType = normalizeTerrainType(
+            monster?.terrainDamageType || spawnChannel?.terrainDamageType
         );
-        turnSkillXpSummary = mergeSkillXpSummaries(turnSkillXpSummary, tabooProgress.summary);
-        await sendTabooRevelationsEphemeral(interaction, tabooProgress.revelations);
+        if (terrainType && !result.victory && !result.defeat) {
+            const terrain = applyTerrainDamageTick({
+                state,
+                terrainType,
+                playerResistanceMap: playerStatusModifiers.statusResistance,
+                enemyResistanceMap: monsterStatusModifiers.statusResistance
+            });
 
-        const resistanceXpSummary = await grantResistanceXpFromStatusDamage(
+            result.log = [
+                ...(result.log || []),
+                formatTerrainLogLine(terrainType, terrain)
+            ];
+
+            result.statusDamageTaken = result.statusDamageTaken || { player: {}, enemy: {} };
+            result.statusDamageTaken.player = result.statusDamageTaken.player || {};
+            result.statusDamageTaken.enemy = result.statusDamageTaken.enemy || {};
+            result.statusDamageTaken.player[terrainType] =
+                (result.statusDamageTaken.player[terrainType] || 0) + terrain.playerDamage;
+            result.statusDamageTaken.enemy[terrainType] =
+                (result.statusDamageTaken.enemy[terrainType] || 0) + terrain.enemyDamage;
+
+            if (state.entityB.hp <= 0) result.victory = true;
+            if (state.entityA.hp <= 0) result.defeat = true;
+        }
+        let turnSkillXpSummary = {};
+        const recoveryTurnXp = await grantRecoveryPassiveXpFromTurn({
+            profileId: profile.id,
+            userSkills: allPlayerSkills,
+            regenData: result.endTurnRegen?.player
+        });
+        turnSkillXpSummary = mergeSkillXpSummaries(turnSkillXpSummary, recoveryTurnXp.summary);
+
+        if (!isHealPotionAction) {
+            const gainedSkillXp = calculatePveSkillXp({
+                uses: result.playerSkillUses || 0,
+                damageDone: result.playerDamageDone || 0,
+                monsterLevel: monster.level || 1,
+                towerTier: 1,
+                rarityXpMultiplier: monster.xpMultiplier || 1,
+                victory: result.victory
+            });
+            const skillProgress = await grantSkillXp(profile.id, skill.id, gainedSkillXp);
+            turnSkillXpSummary = appendSkillProgress(turnSkillXpSummary, skill, skillProgress);
+            const tabooProgress = await grantTabooXpFromSkillUse(
+                profile.id,
+                skill,
+                { monsterLevel: monster.level || 1, towerTier: 1, victory: result.victory, hasKinEaterTitle }
+            );
+            turnSkillXpSummary = mergeSkillXpSummaries(turnSkillXpSummary, tabooProgress.summary);
+            await sendTabooRevelationsEphemeral(interaction, tabooProgress.revelations);
+        }
+
+        const resistanceResult = await passiveSkillAcquisitionService.grantResistanceXpFromStatusDamage(
             profile.id,
             result.statusDamageTaken?.player,
             { monsterLevel: monster.level || 1, towerTier: 1, victory: result.victory }
         );
-        turnSkillXpSummary = mergeSkillXpSummaries(turnSkillXpSummary, resistanceXpSummary);
-        const enhancementXpSummary = await grantEnhancementXpFromStatusDamage(
+        turnSkillXpSummary = mergeSkillXpSummaries(turnSkillXpSummary, resistanceResult.summary);
+        const enhancementResult = await passiveSkillAcquisitionService.grantEnhancementXpFromStatusDamage(
             profile.id,
             result.statusDamageTaken?.enemy,
             { monsterLevel: monster.level || 1, towerTier: 1, victory: result.victory }
         );
-        turnSkillXpSummary = mergeSkillXpSummaries(turnSkillXpSummary, enhancementXpSummary);
+        turnSkillXpSummary = mergeSkillXpSummaries(turnSkillXpSummary, enhancementResult.summary);
+        await passiveSkillAcquisitionService.sendObtainedSkillsEphemeral(interaction, [
+            ...passiveSkillAcquisitionService.collectUnlockedSkillsFromSummary(turnSkillXpSummary),
+            ...(resistanceResult.unlockedSkills || []),
+            ...(enhancementResult.unlockedSkills || [])
+        ]);
 
         const sessionSkillXpSummary = mergeSkillXpSummaries(
             profile.combatState?.skillXpSummary,
@@ -210,6 +297,20 @@ async function handleFightAttack(interaction) {
             0,
             playerHpBeforeTurn - Math.max(0, Number(result.state?.entityA?.hp) || 0)
         );
+        const unlockedTitles = await processTitleAchievements(profile, {
+            skillName: combatSkill.name,
+            skillEffectMain: combatSkill.effect_type_main,
+            skillEffectSpecific: combatSkill.effect_type_specific,
+            poisonDamageTaken: Math.max(0, Number(result.statusDamageTaken?.player?.Poison) || 0),
+            usedHealConsumable: isHealPotionAction,
+            victoryAgainstMonster: !!result.victory,
+            monsterName: monster.name,
+            monsterType: monster.monsterType,
+            oneShotKill: !!result.victory &&
+                monsterHpBeforeTurn >= Math.floor(monsterMaxHpForOneShot * 0.9) &&
+                (Math.max(0, Number(result.playerDamageDone) || 0) >= monsterHpBeforeTurn)
+        });
+        await sendUnlockedRulersEphemeral(interaction, unlockedTitles);
 
         if (!isBattleEnd) {
             await processRulerProgress(profile, {
@@ -222,7 +323,6 @@ async function handleFightAttack(interaction) {
         }
 
         if (result.victory) {
-            const spawnChannel = await SpawnChannels.findByPk(spawnInstance.spawnChannelId);
             const channelXpMultiplier = spawnChannel?.xpMultiplier ?? 1;
             const baseXpGain = Math.floor(50 * monster.level * (monster.xpMultiplier || 1) * channelXpMultiplier);
             const xpBoost = await applyXpBoost(profile, baseXpGain);
@@ -270,6 +370,30 @@ async function handleFightAttack(interaction) {
             await interaction.channel.send(
                 `${monster.name} has been slain by ${interaction.user.username}.`
             );
+            const questOutcome = await incrementQuestKillProgress(profile.id, interaction.guildId, 1, {
+                monsterId: monster?.id,
+                monsterName: monster?.name,
+                monsterLevel: monster?.level,
+                monsterRarity: monster?.rarity
+            }).catch(() => null);
+            await sendQuestReadyNotificationEphemeral(interaction, questOutcome);
+            const questRewardLine = formatQuestAutoRewardLine(questOutcome);
+            await recordJournalProgress(profile.id, {
+                type: 'spawn_victory',
+                kills: 1,
+                xp: xpGain,
+                damageDealt: Math.max(0, Number(result.playerDamageDone) || 0),
+                damageTaken: Math.max(0, Number(damageTakenThisTurn) || 0),
+                statusInflictedTicks: Math.max(0, Number(statusInflictedTicks) || 0),
+                statusTakenTicks: Math.max(0, Number(statusTicksTaken) || 0),
+                lootText: loot ? `${loot.item} x${loot.quantity}` : ''
+            }).catch(() => {});
+            const guildProgressOut = await recordGuildProgressByProfile(profile.id, {
+                kills: 1,
+                xpGained: xpGain
+            }).catch(() => null);
+            await sendGuildMissionReadyNotificationEphemeral(interaction, guildProgressOut);
+            const guildMissionLine = formatGuildMissionReadyLine(guildProgressOut);
 
             return interaction.editReply({
                 embeds: [
@@ -277,13 +401,16 @@ async function handleFightAttack(interaction) {
                         .setColor('#00ff00')
                         .setTitle('Spawn Victory')
                         .setDescription(
-                            `${formatSkillXpSummary(sessionSkillXpSummary)}\n\n` +
-                            `+${xpGain} XP` +
+                            `Rewards:\n` +
+                            `- XP: +${xpGain}` +
                             (xpBoost.bonusXp > 0 ? ` (Boost +${xpBoost.bonusXp})` : '') +
-                            `\nChannel XP Multiplier: x${channelXpMultiplier}` +
-                            (xpBoost.bonusXp > 0 ? `\nXP Boost Remaining: ${xpBoost.remainingLabel}` : '') +
-                            (loot ? `\nLoot: ${formatCoreItemLabel(loot.item)} x${loot.quantity}` : '') +
-                            (skillPointsGain > 0 ? `\nLevel Up: ${newLevel}` : '')
+                            `\n- Channel XP Multiplier: x${channelXpMultiplier}` +
+                            (xpBoost.bonusXp > 0 ? `\n- XP Boost Remaining: ${xpBoost.remainingLabel}` : '') +
+                            (loot ? `\n- Loot: ${formatCoreItemLabel(loot.item)} x${loot.quantity}` : '') +
+                            (skillPointsGain > 0 ? `\n- Level Up: ${newLevel}` : '') +
+                            (questRewardLine ? `\n- ${questRewardLine}` : '') +
+                            (guildMissionLine ? `\n- ${guildMissionLine}` : '') +
+                            `\n\n${formatSkillXpSummary(sessionSkillXpSummary)}`
                         )
                 ],
                 components: [],
@@ -324,6 +451,14 @@ async function handleFightAttack(interaction) {
             await interaction.channel.send(
                 `${monster.name} remains in the area and can still be challenged.`
             );
+            await recordJournalProgress(profile.id, {
+                type: 'spawn_defeat',
+                damageDealt: Math.max(0, Number(result.playerDamageDone) || 0),
+                damageTaken: Math.max(0, Number(damageTakenThisTurn) || 0),
+                statusInflictedTicks: Math.max(0, Number(statusInflictedTicks) || 0),
+                statusTakenTicks: Math.max(0, Number(statusTicksTaken) || 0),
+                note: `Defeated by ${monster.name}`
+            }).catch(() => {});
 
             return interaction.editReply({
                 embeds: [
@@ -387,10 +522,15 @@ async function handleFightAttack(interaction) {
 
         if (playerImage) embed.setImage(`attachment://${playerImage.name}`);
         if (monsterImage) embed.setThumbnail(`attachment://${monsterImage.name}`);
+        const components = await buildFightActionComponents({
+            profileId: profile.id,
+            attackerStats: playerStats,
+            defenderStats: state.entityB
+        });
 
         return interaction.editReply({
             embeds: [embed],
-            components: interaction.message.components,
+            components,
             files: [
                 ...(playerImage ? [playerImage] : []),
                 ...(monsterImage ? [monsterImage] : [])
@@ -445,13 +585,28 @@ async function handleFightAttack(interaction) {
         }
     };
 
-    const insufficientReason = getInsufficientResourceReason(state.entityA, combatSkill);
-    if (insufficientReason) {
-        await interaction.followUp({
-            content: insufficientReason,
-            flags: MessageFlags.Ephemeral
-        });
-        return;
+    let potionHealAmount = 0;
+    if (isHealPotionAction) {
+        const consumed = await consumeInventoryItem(profile.id, 'Healing Potion', 1);
+        if (!consumed) {
+            await interaction.followUp({
+                content: 'You do not have any **Healing Potion**.',
+                flags: MessageFlags.Ephemeral
+            });
+            return;
+        }
+        const maxHp = Math.max(1, Number(state.entityA.maxHp) || Number(state.entityA.hp) || 1);
+        potionHealAmount = Math.max(1, Math.floor(maxHp * getHealPotionRatio()));
+        state.entityA.hp = Math.min(maxHp, Math.max(0, Number(state.entityA.hp) || 0) + potionHealAmount);
+    } else {
+        const insufficientReason = getInsufficientResourceReason(state.entityA, combatSkill);
+        if (insufficientReason) {
+            await interaction.followUp({
+                content: insufficientReason,
+                flags: MessageFlags.Ephemeral
+            });
+            return;
+        }
     }
 
     const monsterWithSkills = await Monsters.findByPk(monster.id, {
@@ -459,47 +614,65 @@ async function handleFightAttack(interaction) {
     });
 
     const monsterSkills = monsterWithSkills?.Skills || [];
-    const monsterStatusModifiers = buildStatusModifiersFromSkills(monsterSkills);
+    const monsterStatusModifiers = buildStatusModifiersFromSkillsUtil(monsterSkills);
     state.entityA.statusResistance = playerStatusModifiers.statusResistance;
     state.entityA.statusEnhancement = playerStatusModifiers.statusEnhancement;
     state.entityA.rulerPassives = playerStatusModifiers.rulerPassives;
     state.entityB.statusResistance = monsterStatusModifiers.statusResistance;
     state.entityB.statusEnhancement = monsterStatusModifiers.statusEnhancement;
     state.entityB.rulerPassives = monsterStatusModifiers.rulerPassives;
+    const monsterHpBeforeTurn = Math.max(0, Number(state.entityB.hp) || 0);
+    const monsterMaxHpForOneShot = Math.max(1, Number(state.entityB.maxHp) || monsterHpBeforeTurn || 1);
     const playerHpBeforeTurn = Math.max(0, Number(state.entityA.hp) || 0);
     const result = executeTurn(state, combatSkill, monsterSkills);
+    if (isHealPotionAction) {
+        result.log = sanitizePotionTurnLog(result.log, potionHealAmount);
+    }
     let turnSkillXpSummary = {};
-
-    const gainedSkillXp = calculatePveSkillXp({
-        uses: result.playerSkillUses || 0,
-        damageDone: result.playerDamageDone || 0,
-        monsterLevel: monster.level || 1,
-        towerTier: progress.tier || 1,
-        rarityXpMultiplier: 1,
-        victory: result.victory
+    const recoveryTurnXp = await grantRecoveryPassiveXpFromTurn({
+        profileId: profile.id,
+        userSkills: allPlayerSkills,
+        regenData: result.endTurnRegen?.player
     });
-    const skillProgress = await grantSkillXp(profile.id, skill.id, gainedSkillXp);
-    turnSkillXpSummary = appendSkillProgress(turnSkillXpSummary, skill, skillProgress);
-    const tabooProgress = await grantTabooXpFromSkillUse(
-        profile.id,
-        skill,
-        { monsterLevel: monster.level || 1, towerTier: progress.tier || 1, victory: result.victory, hasKinEaterTitle }
-    );
-    turnSkillXpSummary = mergeSkillXpSummaries(turnSkillXpSummary, tabooProgress.summary);
-    await sendTabooRevelationsEphemeral(interaction, tabooProgress.revelations);
+    turnSkillXpSummary = mergeSkillXpSummaries(turnSkillXpSummary, recoveryTurnXp.summary);
 
-    const resistanceXpSummary = await grantResistanceXpFromStatusDamage(
+    if (!isHealPotionAction) {
+        const gainedSkillXp = calculatePveSkillXp({
+            uses: result.playerSkillUses || 0,
+            damageDone: result.playerDamageDone || 0,
+            monsterLevel: monster.level || 1,
+            towerTier: progress.tier || 1,
+            rarityXpMultiplier: 1,
+            victory: result.victory
+        });
+        const skillProgress = await grantSkillXp(profile.id, skill.id, gainedSkillXp);
+        turnSkillXpSummary = appendSkillProgress(turnSkillXpSummary, skill, skillProgress);
+        const tabooProgress = await grantTabooXpFromSkillUse(
+            profile.id,
+            skill,
+            { monsterLevel: monster.level || 1, towerTier: progress.tier || 1, victory: result.victory, hasKinEaterTitle }
+        );
+        turnSkillXpSummary = mergeSkillXpSummaries(turnSkillXpSummary, tabooProgress.summary);
+        await sendTabooRevelationsEphemeral(interaction, tabooProgress.revelations);
+    }
+
+    const resistanceResult = await passiveSkillAcquisitionService.grantResistanceXpFromStatusDamage(
         profile.id,
         result.statusDamageTaken?.player,
         { monsterLevel: monster.level || 1, towerTier: progress.tier || 1, victory: result.victory }
     );
-    turnSkillXpSummary = mergeSkillXpSummaries(turnSkillXpSummary, resistanceXpSummary);
-    const enhancementXpSummary = await grantEnhancementXpFromStatusDamage(
+    turnSkillXpSummary = mergeSkillXpSummaries(turnSkillXpSummary, resistanceResult.summary);
+    const enhancementResult = await passiveSkillAcquisitionService.grantEnhancementXpFromStatusDamage(
         profile.id,
         result.statusDamageTaken?.enemy,
         { monsterLevel: monster.level || 1, towerTier: progress.tier || 1, victory: result.victory }
     );
-    turnSkillXpSummary = mergeSkillXpSummaries(turnSkillXpSummary, enhancementXpSummary);
+    turnSkillXpSummary = mergeSkillXpSummaries(turnSkillXpSummary, enhancementResult.summary);
+    await passiveSkillAcquisitionService.sendObtainedSkillsEphemeral(interaction, [
+        ...passiveSkillAcquisitionService.collectUnlockedSkillsFromSummary(turnSkillXpSummary),
+        ...(resistanceResult.unlockedSkills || []),
+        ...(enhancementResult.unlockedSkills || [])
+    ]);
 
     const sessionSkillXpSummary = mergeSkillXpSummaries(
         progress.skillXpSummary,
@@ -516,6 +689,20 @@ async function handleFightAttack(interaction) {
         0,
         playerHpBeforeTurn - Math.max(0, Number(result.state?.entityA?.hp) || 0)
     );
+    const unlockedTitles = await processTitleAchievements(profile, {
+        skillName: combatSkill.name,
+        skillEffectMain: combatSkill.effect_type_main,
+        skillEffectSpecific: combatSkill.effect_type_specific,
+        poisonDamageTaken: Math.max(0, Number(result.statusDamageTaken?.player?.Poison) || 0),
+        usedHealConsumable: isHealPotionAction,
+        victoryAgainstMonster: !!result.victory,
+        monsterName: monster.name,
+        monsterType: monster.monsterType,
+        oneShotKill: !!result.victory &&
+            monsterHpBeforeTurn >= Math.floor(monsterMaxHpForOneShot * 0.9) &&
+            (Math.max(0, Number(result.playerDamageDone) || 0) >= monsterHpBeforeTurn)
+    });
+    await sendUnlockedRulersEphemeral(interaction, unlockedTitles);
 
     if (!isBattleEnd) {
         await processRulerProgress(profile, {
@@ -686,10 +873,15 @@ async function updateFightEmbed(interaction, profile, monster, monsterMaxStats, 
 
     if (playerImage) embed.setImage(`attachment://${playerImage.name}`);
     if (monsterImage) embed.setThumbnail(`attachment://${monsterImage.name}`);
+    const components = await buildFightActionComponents({
+        profileId: profile.id,
+        attackerStats: maxPlayer,
+        defenderStats: state.entityB
+    });
 
     return interaction.editReply({
         embeds: [embed],
-        components: interaction.message.components,
+        components,
         files: [
             ...(playerImage ? [playerImage] : []),
             ...(monsterImage ? [monsterImage] : [])
@@ -722,7 +914,6 @@ async function resolveNormalCombat(interaction, profile, progress, monster, resu
         const newXp = leveled.xp;
         const newLevel = leveled.level;
         const skillPointsGain = leveled.skillPointsGain;
-
         await Promise.all([
             profile.update({
                 level: newLevel,
@@ -744,6 +935,30 @@ async function resolveNormalCombat(interaction, profile, progress, monster, resu
                 lastFightAt: new Date()
             })
         ]);
+        const questOutcome = await incrementQuestKillProgress(profile.id, interaction.guildId, 1, {
+            monsterId: monster?.id,
+            monsterName: monster?.name,
+            monsterLevel: monster?.level,
+            monsterRarity: monster?.rarity
+        }).catch(() => null);
+        await sendQuestReadyNotificationEphemeral(interaction, questOutcome);
+        const questRewardLine = formatQuestAutoRewardLine(questOutcome);
+        await recordJournalProgress(profile.id, {
+            type: 'tower_victory',
+            kills: 1,
+            xp: xpGain,
+            damageDealt: Math.max(0, Number(result.playerDamageDone) || 0),
+            damageTaken: Math.max(0, Number(rulerTurnContext.damageTakenThisTurn) || 0),
+            statusInflictedTicks: Math.max(0, Number(rulerTurnContext.statusInflictedTicks) || 0),
+            statusTakenTicks: Math.max(0, Number(rulerTurnContext.statusTicksTaken) || 0),
+            lootText: loot ? `${loot.item} x${loot.quantity}` : ''
+        }).catch(() => {});
+        const guildProgressOut = await recordGuildProgressByProfile(profile.id, {
+            kills: 1,
+            xpGained: xpGain
+        }).catch(() => null);
+        await sendGuildMissionReadyNotificationEphemeral(interaction, guildProgressOut);
+        const guildMissionLine = formatGuildMissionReadyLine(guildProgressOut);
         const unlockedRulers = await processRulerProgress(profile, {
             isBattleEnd: true,
             victory: true,
@@ -766,14 +981,17 @@ async function resolveNormalCombat(interaction, profile, progress, monster, resu
                     .setColor('#00ff00')
                     .setTitle('Victory')
                     .setDescription(
-                        `${formatSkillXpSummary(skillXpSummary)}\n\n` +
-                        `+${xpGain} XP` +
+                        `Rewards:\n` +
+                        `- XP: +${xpGain}` +
                         (xpBoost.bonusXp > 0 ? ` (Boost +${xpBoost.bonusXp})` : '') +
-                        `\nTier ${progress.tier} • Stage ${progress.stage}` +
-                        (xpBoost.bonusXp > 0 ? `\nXP Boost Remaining: ${xpBoost.remainingLabel}` : '') +
-                        (loot ? `\nLoot: ${formatCoreItemLabel(loot.item)} x${loot.quantity}` : '') +
-                        (skillPointsGain > 0 ? `\nLevel Up! Now level ${newLevel}` : '') +
-                        progressionText
+                        `\n- Tier ${progress.tier} | Stage ${progress.stage}` +
+                        (xpBoost.bonusXp > 0 ? `\n- XP Boost Remaining: ${xpBoost.remainingLabel}` : '') +
+                        (loot ? `\n- Loot: ${formatCoreItemLabel(loot.item)} x${loot.quantity}` : '') +
+                        (skillPointsGain > 0 ? `\n- Level Up: ${newLevel}` : '') +
+                        (questRewardLine ? `\n- ${questRewardLine}` : '') +
+                        (guildMissionLine ? `\n- ${guildMissionLine}` : '') +
+                        progressionText +
+                        `\n\n${formatSkillXpSummary(skillXpSummary)}`
                     )
             ],
             components: [],
@@ -815,6 +1033,14 @@ async function resolveNormalCombat(interaction, profile, progress, monster, resu
         damageTakenThisTurn: rulerTurnContext.damageTakenThisTurn
     });
     await sendUnlockedRulersEphemeral(interaction, unlockedRulers);
+    await recordJournalProgress(profile.id, {
+        type: 'tower_defeat',
+        damageDealt: Math.max(0, Number(result.playerDamageDone) || 0),
+        damageTaken: Math.max(0, Number(rulerTurnContext.damageTakenThisTurn) || 0),
+        statusInflictedTicks: Math.max(0, Number(rulerTurnContext.statusInflictedTicks) || 0),
+        statusTakenTicks: Math.max(0, Number(rulerTurnContext.statusTicksTaken) || 0),
+        note: `Defeated by ${monster.name}`
+    }).catch(() => {});
 
     return interaction.editReply({
         embeds: [
@@ -1024,7 +1250,7 @@ function formatTurnLogSections(logLines = []) {
     const effects = [];
 
     for (const line of lines) {
-        if (line.startsWith('Used ') || line.startsWith('You ')) {
+        if (line.startsWith('Used ') || line.startsWith('Used Heal Potion')) {
             playerActions.push(line);
             continue;
         }
@@ -1034,24 +1260,233 @@ function formatTurnLogSections(logLines = []) {
             continue;
         }
 
+        if (line.startsWith('You regenerated') || line.startsWith('Enemy regenerated')) {
+            effects.push(line);
+            continue;
+        }
+
         effects.push(line);
     }
 
     const sections = [];
     if (playerActions.length) {
         sections.push('Player Actions:');
-        sections.push(playerActions.join('\n'));
+        sections.push(playerActions.map((line) => `- ${line}`).join('\n'));
     }
     if (enemyActions.length) {
         sections.push('Enemy Actions:');
-        sections.push(enemyActions.join('\n'));
+        sections.push(enemyActions.map((line) => `- ${line}`).join('\n'));
     }
     if (effects.length) {
         sections.push('Effects:');
-        sections.push(effects.join('\n'));
+        sections.push(effects.map((line) => `- ${line}`).join('\n'));
     }
 
     return sections.join('\n\n');
+}
+
+function formatQuestAutoRewardLine(questOutcome) {
+    const crystals = Math.max(0, Number(questOutcome?.rewardCrystals) || 0);
+    const xp = Math.max(0, Number(questOutcome?.rewardXp) || 0);
+    const daily = Math.max(0, Number(questOutcome?.dailyCompleted) || 0);
+    const weekly = Math.max(0, Number(questOutcome?.weeklyCompleted) || 0);
+    const totalCompleted = daily + weekly;
+
+    if (crystals <= 0 && xp <= 0 && totalCompleted <= 0) return '';
+
+    const parts = [];
+    if (crystals > 0) parts.push(`+${crystals} crystals`);
+    if (xp > 0) parts.push(`+${xp} XP`);
+    if (totalCompleted > 0) parts.push(`${totalCompleted} quest(s) completed`);
+    return `Quest rewards: ${parts.join(', ')}`;
+}
+
+function formatGuildMissionReadyLine(guildProgressOut) {
+    const daily = !!guildProgressOut?.dailyNewReady;
+    const weekly = !!guildProgressOut?.weeklyNewReady;
+    if (!daily && !weekly) return '';
+    const parts = [];
+    if (daily) parts.push('daily');
+    if (weekly) parts.push('weekly');
+    return `Guild mission ready: ${parts.join(', ')}`;
+}
+
+async function sendGuildMissionReadyNotificationEphemeral(interaction, guildProgressOut) {
+    const daily = !!guildProgressOut?.dailyNewReady;
+    const weekly = !!guildProgressOut?.weeklyNewReady;
+    if (!daily && !weekly) return;
+
+    const parts = [];
+    if (daily) parts.push('daily');
+    if (weekly) parts.push('weekly');
+
+    try {
+        await interaction.followUp({
+            content: `Guild mission ready to claim: ${parts.join(', ')}. Leader/officers can use \`/guild claim\`.`,
+            flags: MessageFlags.Ephemeral
+        });
+    } catch (error) {
+        if (error?.code === 10062 || error?.code === 40060) return;
+        console.error('guild mission ready followUp error:', error);
+    }
+}
+
+async function sendQuestReadyNotificationEphemeral(interaction, questOutcome) {
+    const dailyReady = Math.max(0, Number(questOutcome?.dailyNewReady) || 0);
+    const weeklyReady = Math.max(0, Number(questOutcome?.weeklyNewReady) || 0);
+    if (dailyReady <= 0 && weeklyReady <= 0) return;
+
+    const parts = [];
+    if (dailyReady > 0) parts.push(`${dailyReady} daily`);
+    if (weeklyReady > 0) parts.push(`${weeklyReady} weekly`);
+
+    try {
+        await interaction.followUp({
+            content: `New quests are ready to claim: ${parts.join(', ')}. Use \`/quest\` then \`Claim\`.`,
+            flags: MessageFlags.Ephemeral
+        });
+    } catch (error) {
+        if (error?.code === 10062 || error?.code === 40060) return;
+        console.error('quest ready followUp error:', error);
+    }
+}
+
+function sanitizePotionTurnLog(logLines = [], potionHealAmount = 0) {
+    const lines = Array.isArray(logLines) ? logLines.map((line) => String(line || '')) : [];
+    const filtered = lines.filter((line) => !line.startsWith('Used Heal Potion ->'));
+    return [`Used Heal Potion -> +${Math.max(0, Number(potionHealAmount) || 0)} HP`, ...filtered];
+}
+
+function estimateMenuSkillDamage(attackerStats, defenderStats, skill, skillLevel = 1) {
+    const effectivePower = (Number(skill?.power) || 0) + ((Math.max(1, Number(skillLevel) || 1) - 1) * 0.1);
+    let attackStat = 0;
+    let defenseStat = 0;
+    const abyssAttack = isAbyssAttack(skill);
+
+    if (skill?.effect_type_main === 'Physical') {
+        attackStat = Math.max(0, Number(attackerStats?.offense) || 0);
+        defenseStat = abyssAttack ? 0 : Math.max(0, Number(defenderStats?.defense) || 0);
+    } else if (skill?.effect_type_main === 'Magic') {
+        attackStat = Math.max(0, Number(attackerStats?.magic) || 0);
+        defenseStat = abyssAttack ? 0 : Math.max(0, Number(defenderStats?.resistance) || 0);
+    } else {
+        return 0;
+    }
+
+    const multiplier = 1 + (effectivePower * 0.1);
+    const rawDamage = attackStat * multiplier;
+    const reducedDamage = rawDamage * (100 / (100 + defenseStat));
+    return Math.max(0, Math.floor(reducedDamage));
+}
+
+async function buildFightActionComponents({ profileId, attackerStats, defenderStats }) {
+    const userSkills = await UserSkills.findAll({
+        where: {
+            profileId,
+            equippedSlot: { [Op.not]: null }
+        },
+        include: [{
+            model: Skills,
+            required: true,
+            where: {
+                effect_type_main: {
+                    [Op.in]: ['Physical', 'Magic', 'Debuff', 'Buff']
+                }
+            }
+        }],
+        order: [['equippedSlot', 'ASC']]
+    });
+
+    const options = userSkills.slice(0, 25).map((us) => ({
+        label: us.Skill.name,
+        value: String(us.Skill.id),
+        description: buildSkillSelectDescription(
+            estimateMenuSkillDamage(attackerStats, defenderStats, us.Skill, us.level),
+            us.Skill
+        )
+    }));
+
+    const healPotionQty = await getInventoryQuantity(profileId, 'Healing Potion');
+    if (healPotionQty > 0 && options.length < 25) {
+        options.push({
+            label: 'Heal Potion',
+            value: 'potion_heal',
+            description: `${getHealPotionLabel()} | x${healPotionQty}`
+        });
+    }
+
+    if (!options.length) return [];
+    return [{
+        type: 1,
+        components: [{
+            type: 3,
+            custom_id: `attack_${profileId}`,
+            placeholder: 'Choose a skill',
+            options
+        }]
+    }];
+}
+
+function buildSkillSelectDescription(damage, skill) {
+    const parts = [`~DMG ${damage}`];
+    const mpCost = Number(skill?.mp_cost) || 0;
+    const spCost = Number(skill?.sp_cost) || 0;
+
+    if (mpCost > 0) parts.push(`MP ${mpCost}`);
+    if (spCost > 0) parts.push(`SP ${spCost}`);
+
+    return parts.join(' | ');
+}
+
+function normalizeTerrainType(rawType) {
+    const key = String(rawType || '').toLowerCase().trim();
+    if (!key || key === 'none') return null;
+    const normalized = key.charAt(0).toUpperCase() + key.slice(1);
+    return COMBAT_BALANCE.terrainDamage.allowedTypes.includes(normalized) ? normalized : null;
+}
+
+function getResistancePercent(resistanceMap, effectType) {
+    const key = String(effectType || '').trim();
+    if (!key) return 0;
+    return Math.max(0, Math.min(100, Number(resistanceMap?.[key]) || 0));
+}
+
+function applyTerrainDamageTick({
+    state,
+    terrainType,
+    playerResistanceMap,
+    enemyResistanceMap
+}) {
+    const playerMaxHp = Math.max(1, Number(state?.entityA?.maxHp) || Number(state?.entityA?.hp) || 1);
+    const enemyMaxHp = Math.max(1, Number(state?.entityB?.maxHp) || Number(state?.entityB?.hp) || 1);
+    const ratio = Math.max(0, Math.min(100, Number(COMBAT_BALANCE.terrainDamage.percentMaxHp) || 0)) / 100;
+    const minDamage = Math.max(0, Number(COMBAT_BALANCE.terrainDamage.minDamage) || 0);
+    const basePlayer = Math.max(minDamage, Math.floor(playerMaxHp * ratio));
+    const baseEnemy = Math.max(minDamage, Math.floor(enemyMaxHp * ratio));
+
+    const playerRes = getResistancePercent(playerResistanceMap, terrainType);
+    const enemyRes = getResistancePercent(enemyResistanceMap, terrainType);
+
+    const playerDamage = Math.max(0, Math.floor(basePlayer * (1 - (playerRes / 100))));
+    const enemyDamage = Math.max(0, Math.floor(baseEnemy * (1 - (enemyRes / 100))));
+
+    state.entityA.hp = Math.max(0, Math.floor((Number(state?.entityA?.hp) || 0) - playerDamage));
+    state.entityB.hp = Math.max(0, Math.floor((Number(state?.entityB?.hp) || 0) - enemyDamage));
+
+    return { playerDamage, enemyDamage, playerRes, enemyRes };
+}
+
+function formatTerrainLogLine(terrainType, terrain = {}) {
+    const playerDamage = Math.max(0, Number(terrain.playerDamage) || 0);
+    const enemyDamage = Math.max(0, Number(terrain.enemyDamage) || 0);
+    const playerRes = Math.max(0, Number(terrain.playerRes) || 0);
+    const enemyRes = Math.max(0, Number(terrain.enemyRes) || 0);
+
+    if (playerDamage <= 0 && enemyDamage <= 0) {
+        return `Terrain (${terrainType}) was nullified by resistances.`;
+    }
+
+    return `Terrain (${terrainType}) -> You -${playerDamage} HP (${playerRes}% res), Enemy -${enemyDamage} HP (${enemyRes}% res)`;
 }
 
 function buildStatusModifiersFromSkills(skills = []) {
@@ -1059,6 +1494,19 @@ function buildStatusModifiersFromSkills(skills = []) {
     const statusResistance = Object.fromEntries(effects.map((effect) => [effect, 0]));
     const statusEnhancement = Object.fromEntries(effects.map((effect) => [effect, 0]));
     const skillLevels = new Map();
+    const recovery = { hp: 0, mp: 0, sp: 0 };
+    const consumptionReduction = { mp: 0, sp: 0 };
+    let hasImmortality = false;
+    const hasNullificationToken = (value) => {
+        const text = String(value || '').toLowerCase();
+        return (
+            text.includes('nullification') ||
+            text.includes('nulification') ||
+            text.includes('nulhification') ||
+            text.includes('nullify') ||
+            text.includes('nulhify')
+        );
+    };
 
     for (const entry of skills || []) {
         const name = String(entry?.name || entry?.Skill?.name || '').trim();
@@ -1066,6 +1514,9 @@ function buildStatusModifiersFromSkills(skills = []) {
         const lowerName = name.toLowerCase();
         const level = Math.max(1, Number(entry?.level) || 1);
         skillLevels.set(lowerName, Math.max(level, Number(skillLevels.get(lowerName)) || 0));
+        if (lowerName.includes('immortality')) {
+            hasImmortality = true;
+        }
 
         const tier = Math.max(1, Number(entry?.tier || entry?.Skill?.tier) || 1);
         const lower = lowerName;
@@ -1077,6 +1528,38 @@ function buildStatusModifiersFromSkills(skills = []) {
         else if (specificLower === 'cutting') mappedEffect = 'Cutting';
         else if (specificLower === 'rot') mappedEffect = 'Rot';
 
+        const hasHpToken = lower.includes('hp');
+        const hasMpToken = lower.includes('mp');
+        const hasSpToken = lower.includes('sp') || lower.includes('stamina');
+        const inferTargets = () => {
+            if (hasHpToken) return ['hp'];
+            if (hasMpToken) return ['mp'];
+            if (hasSpToken) return ['sp'];
+            return ['mp', 'sp'];
+        };
+
+        if (lower.includes('recovery speed') || lower.includes('rapid recovery')) {
+            const isRapid = lower.includes('rapid recovery');
+            const regenPct = isRapid
+                ? Math.min(20, 2 + (1.2 * level))
+                : Math.min(12, 1 + (0.7 * level));
+            for (const target of inferTargets()) {
+                recovery[target] = Math.max(recovery[target], regenPct);
+            }
+        }
+
+        if (lower.includes('lessened consumption') || lower.includes('minimized consumption')) {
+            const isMinimized = lower.includes('minimized consumption');
+            const reductionPct = isMinimized
+                ? Math.min(45, 8 + (1.8 * level))
+                : Math.min(28, 4 + (1.3 * level));
+            for (const target of inferTargets()) {
+                if (target === 'mp' || target === 'sp') {
+                    consumptionReduction[target] = Math.max(consumptionReduction[target], reductionPct);
+                }
+            }
+        }
+
         for (const effect of effects) {
             const token = effect.toLowerCase();
             const matchesEffect = mappedEffect === effect || lower.includes(token);
@@ -1087,7 +1570,7 @@ function buildStatusModifiersFromSkills(skills = []) {
                 statusEnhancement[effect] = Math.max(statusEnhancement[effect], enhancementPercent);
             }
 
-            const isNullification = lower.includes('nullification') || lower.includes('nullify');
+            const isNullification = hasNullificationToken(lower);
             const isSuperResistance =
                 (lower.includes('super') && lower.includes('resistance')) ||
                 (tier >= 2 && lower.includes('resistance') && !isNullification);
@@ -1139,8 +1622,26 @@ function buildStatusModifiersFromSkills(skills = []) {
         shieldOnHitPct: scaled(gluttony, 8, 1.4, 30),
         baseDamageReductionPct: scaled(sloth, 6, 1.5, 30),
         costReductionPct: scaled(temperance, 5, 1.2, 30),
+        mpCostReductionPct: Math.max(
+            scaled(temperance, 5, 1.2, 30),
+            Math.max(0, Number(consumptionReduction.mp) || 0)
+        ),
+        spCostReductionPct: Math.max(
+            scaled(temperance, 5, 1.2, 30),
+            Math.max(0, Number(consumptionReduction.sp) || 0)
+        ),
         lowHpDamageReductionPct: scaled(mercy, 10, 1.8, 35),
         endTurnRegenPct: scaled(diligence, 2, 0.5, 12),
+        hpRegenPct: Math.max(0, Number(recovery.hp) || 0),
+        mpRegenPct: Math.max(
+            scaled(diligence, 2, 0.5, 12),
+            Math.max(0, Number(recovery.mp) || 0)
+        ),
+        spRegenPct: Math.max(
+            scaled(diligence, 2, 0.5, 12),
+            Math.max(0, Number(recovery.sp) || 0)
+        ),
+        immortalityEnabled: hasImmortality,
         magicDamageBonusPct: scaled(wisdom, 6, 1.7, 30)
     };
 
@@ -1236,23 +1737,6 @@ function collectTabooRevelations(previousLevel, newLevel) {
     }
 
     return lines;
-}
-
-function calculateResistanceSkillXp({
-    damageTaken = 0,
-    monsterLevel = 1,
-    towerTier = 1,
-    victory = false
-} = {}) {
-    const safeDamage = Math.max(0, Number(damageTaken) || 0);
-    if (safeDamage <= 0) return 0;
-
-    const safeLevel = Math.max(1, Number(monsterLevel) || 1);
-    const safeTier = Math.max(1, Number(towerTier) || 1);
-    const victoryBonus = victory ? 1 : 0;
-
-    const raw = (Math.sqrt(safeDamage) * 1.1) + (safeLevel * 0.4) + ((safeTier - 1) * 0.8) + victoryBonus;
-    return Math.max(1, Math.min(25, Math.round(raw)));
 }
 
 function calculateTabooSkillXp({
@@ -1361,92 +1845,6 @@ async function profileHasTitle(profileId, titleName) {
     return !!userTitle;
 }
 
-async function grantResistanceXpFromStatusDamage(profileId, statusDamageByType, context = {}) {
-    const entries = Object.entries(statusDamageByType || {})
-        .filter(([, totalDamage]) => (Number(totalDamage) || 0) > 0);
-
-    if (!entries.length) return {};
-
-    const statusTypes = entries.map(([statusType]) => String(statusType));
-
-    const resistanceUserSkills = await UserSkills.findAll({
-        where: { profileId },
-        include: [{
-            model: Skills,
-            where: {
-                type: 'Resistance Skills',
-                effect_type_main: 'Buff',
-                effect_type_specific: { [Op.in]: statusTypes }
-            }
-        }]
-    });
-
-    let summary = {};
-
-    for (const userSkill of resistanceUserSkills) {
-        const passiveSkill = userSkill.Skill;
-        if (!passiveSkill) continue;
-
-        const damageTaken = Math.max(0, Number(statusDamageByType[passiveSkill.effect_type_specific]) || 0);
-        if (damageTaken <= 0) continue;
-
-        const gainedXp = calculateResistanceSkillXp({
-            damageTaken,
-            monsterLevel: context.monsterLevel || 1,
-            towerTier: context.towerTier || 1,
-            victory: !!context.victory
-        });
-
-        const progress = await grantSkillXp(profileId, passiveSkill.id, gainedXp);
-        summary = appendSkillProgress(summary, passiveSkill, progress);
-    }
-
-    return summary;
-}
-
-async function grantEnhancementXpFromStatusDamage(profileId, statusDamageByType, context = {}) {
-    const entries = Object.entries(statusDamageByType || {})
-        .filter(([, totalDamage]) => (Number(totalDamage) || 0) > 0);
-
-    if (!entries.length) return {};
-
-    const statusTypes = entries.map(([statusType]) => String(statusType));
-
-    const enhancementUserSkills = await UserSkills.findAll({
-        where: { profileId },
-        include: [{
-            model: Skills,
-            where: {
-                effect_type_main: 'Buff',
-                effect_type_specific: { [Op.in]: statusTypes },
-                name: { [Op.like]: '%Enhancement%' }
-            }
-        }]
-    });
-
-    let summary = {};
-
-    for (const userSkill of enhancementUserSkills) {
-        const passiveSkill = userSkill.Skill;
-        if (!passiveSkill) continue;
-
-        const damageDone = Math.max(0, Number(statusDamageByType[passiveSkill.effect_type_specific]) || 0);
-        if (damageDone <= 0) continue;
-
-        const gainedXp = calculateResistanceSkillXp({
-            damageTaken: damageDone,
-            monsterLevel: context.monsterLevel || 1,
-            towerTier: context.towerTier || 1,
-            victory: !!context.victory
-        });
-
-        const progress = await grantSkillXp(profileId, passiveSkill.id, gainedXp);
-        summary = appendSkillProgress(summary, passiveSkill, progress);
-    }
-
-    return summary;
-}
-
 function resolveMonsterImage(monster) {
     if (!monster?.image) return null;
 
@@ -1455,6 +1853,9 @@ function resolveMonsterImage(monster) {
 
     return new AttachmentBuilder(imagePath, { name: monster.image });
 }
+
+
+
 
 
 

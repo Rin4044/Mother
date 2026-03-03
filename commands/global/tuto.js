@@ -5,6 +5,7 @@ const {
     progressTutorial,
     buildTutorialStepText
 } = require('../../utils/tutorialService');
+const { formatCrystalLabel } = require('../../utils/coreEmoji');
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -37,13 +38,13 @@ module.exports = {
             .setTitle('Tutorial Panel')
             .setDescription(
                 `Current Step: ${tutorial.finished ? 'Completed' : `${tutorial.current_step}/${TUTORIAL_STEPS.length}`}\n` +
-                `Crystals: ${result.profile.crystals || 0}`
+                `${formatCrystalLabel(result.profile.crystals || 0)}`
             );
 
         if (rewards.length) {
             embed.addFields({
                 name: 'New Rewards',
-                value: rewards.map((r) => `Step ${r.stepId}: +${r.crystals} crystals`).join('\n')
+                value: rewards.map((r) => `Step ${r.stepId}: +${formatCrystalLabel(r.crystals)}`).join('\n')
             });
         }
 
@@ -51,7 +52,7 @@ module.exports = {
             embed.addFields(
                 { name: `Quest ${nextStep.id}: ${nextStep.title}`, value: nextStep.description },
                 { name: 'Checklist', value: buildTutorialStepText(nextStep, tutorial.actions || {}) },
-                { name: 'Reward', value: `${nextStep.reward} crystals` }
+                { name: 'Reward', value: formatCrystalLabel(nextStep.reward) }
             );
         } else {
             embed.addFields({

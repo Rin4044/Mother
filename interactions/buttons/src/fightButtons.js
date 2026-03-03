@@ -16,6 +16,9 @@ const { calculateScaling } = require('../../../utils/combatEngine');
 const { calculatePlayerStats } = require('../../../utils/playerStats');
 const { resolveImage } = require('../../../utils/resolveProfileImage');
 const { processRulerProgress } = require('../../../utils/rulerTitleService');
+const { getInventoryQuantity } = require('../../../utils/inventoryService');
+const { isAbyssAttack } = require('../../../utils/abyssSkill');
+const { getHealPotionLabel } = require('../../../utils/combatBalanceConfig');
 
 async function handleFightStart(interaction) {
 
@@ -155,6 +158,15 @@ async function handleFightStart(interaction) {
         description: buildSkillOptionDescription(playerMax, scaled, us.Skill, us.level)
     }));
 
+    const healPotionQty = await getInventoryQuantity(profile.id, 'Healing Potion');
+    if (healPotionQty > 0 && options.length < 25) {
+        options.push({
+            label: 'Heal Potion',
+            value: 'potion_heal',
+            description: `${getHealPotionLabel()} | x${healPotionQty}`
+        });
+    }
+
     const row = new ActionRowBuilder().addComponents(
         new StringSelectMenuBuilder()
             .setCustomId(`attack_${profile.id}`)
@@ -263,13 +275,14 @@ function estimateSkillDamage(attackerStats, defenderStats, skill, skillLevel = 1
     const effectivePower = (Number(skill?.power) || 0) + ((Math.max(1, Number(skillLevel) || 1) - 1) * 0.1);
     let attackStat = 0;
     let defenseStat = 0;
+    const abyssAttack = isAbyssAttack(skill);
 
     if (skill?.effect_type_main === 'Physical') {
         attackStat = Math.max(0, Number(attackerStats?.offense) || 0);
-        defenseStat = Math.max(0, Number(defenderStats?.defense) || 0);
+        defenseStat = abyssAttack ? 0 : Math.max(0, Number(defenderStats?.defense) || 0);
     } else if (skill?.effect_type_main === 'Magic') {
         attackStat = Math.max(0, Number(attackerStats?.magic) || 0);
-        defenseStat = Math.max(0, Number(defenderStats?.resistance) || 0);
+        defenseStat = abyssAttack ? 0 : Math.max(0, Number(defenderStats?.resistance) || 0);
     } else {
         return 0;
     }

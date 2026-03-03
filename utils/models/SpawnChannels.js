@@ -49,6 +49,12 @@ module.exports = (sequelize) => {
       defaultValue: null
     },
 
+    terrainDamageType: {
+      type: DataTypes.STRING,
+      allowNull: true,
+      defaultValue: null
+    },
+
     nextSpawnAt: {
       type: DataTypes.BIGINT,
       defaultValue: null

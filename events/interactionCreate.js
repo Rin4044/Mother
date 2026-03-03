@@ -4,8 +4,10 @@ const fs = require('fs');
 
 const { routeButton } = require('../interactions/buttons');
 const { routeSelectMenu } = require('../interactions/selectmenus');
+const { handleAdventurerGuildSellModal } = require('../interactions/modals/src/adventurerGuildSellModal');
+const { handleSynthesisModal } = require('../interactions/modals/src/synthesisModal');
 
-const { buildSpawnPanel } = require('../commands/global/configSpawn');
+const { buildSpawnPanel } = require('../commands/global/config');
 
 const { SpawnChannels, SpawnConfig, SpawnInstances, Profiles, UserSkills, Skills, FightProgress } = require('../database');
 const { Op } = require('sequelize');
@@ -13,6 +15,8 @@ const { Op } = require('sequelize');
 const { calculatePlayerStats } = require('../utils/playerStats');
 const { resolveImage } = require('../utils/resolveProfileImage');
 const { progressTutorial } = require('../utils/tutorialService');
+const { getInventoryQuantity } = require('../utils/inventoryService');
+const { getHealPotionLabel } = require('../utils/combatBalanceConfig');
 const MAX_SPAWN_CHANNELS = 25;
 
 module.exports = {
@@ -90,6 +94,147 @@ module.exports = {
                 );
 
                 return interaction.showModal(modal);
+            }
+
+            if (id.startsWith('spawn_terrain_channel_')) {
+                const ownerId = id.split('_')[3];
+                if (interaction.user.id !== ownerId) {
+                    return interaction.reply({ content: "Not your menu.", flags: MessageFlags.Ephemeral });
+                }
+
+                const selectedChannelId = parseInt(interaction.values[0], 10);
+                if (isNaN(selectedChannelId)) {
+                    return interaction.reply({ content: "Invalid channel selection.", flags: MessageFlags.Ephemeral });
+                }
+
+                const spawnChannel = await SpawnChannels.findOne({
+                    where: {
+                        id: selectedChannelId,
+                        guildId: interaction.guild.id
+                    }
+                });
+                if (!spawnChannel) {
+                    return interaction.reply({ content: "Spawn channel not found.", flags: MessageFlags.Ephemeral });
+                }
+
+                const embed = new EmbedBuilder()
+                    .setColor('#290003')
+                    .setTitle(`Terrain Damage - Channel #${spawnChannel.id}`)
+                    .setDescription(
+                        `Current terrain: **${spawnChannel.terrainDamageType || 'None'}**\n` +
+                        `Select a new terrain damage type.`
+                    );
+
+                const select = new StringSelectMenuBuilder()
+                    .setCustomId(`spawn_terrain_select_${ownerId}_${spawnChannel.id}`)
+                    .setPlaceholder('Select terrain damage')
+                    .addOptions([
+                        { label: 'None', value: 'none', description: 'Disable terrain damage' },
+                        { label: 'Poison', value: 'poison', description: 'Apply poison terrain damage' },
+                        { label: 'Fire', value: 'fire', description: 'Apply fire terrain damage' },
+                        { label: 'Cutting', value: 'cutting', description: 'Apply cutting terrain damage' },
+                        { label: 'Rot', value: 'rot', description: 'Apply rot terrain damage' }
+                    ]);
+
+                const row = new ActionRowBuilder().addComponents(select);
+                const backRow = new ActionRowBuilder().addComponents(
+                    new ButtonBuilder()
+                        .setCustomId(`spawn_terrain_${ownerId}`)
+                        .setLabel('Back')
+                        .setStyle(ButtonStyle.Secondary)
+                );
+
+                return interaction.update({
+                    embeds: [embed],
+                    components: [row, backRow]
+                });
+            }
+
+            if (id.startsWith('spawn_terrain_select_')) {
+                const ownerId = id.split('_')[3];
+                const spawnChannelId = parseInt(id.split('_')[4], 10);
+
+                if (interaction.user.id !== ownerId) {
+                    return interaction.reply({ content: "Not your menu.", flags: MessageFlags.Ephemeral });
+                }
+                if (isNaN(spawnChannelId)) {
+                    return interaction.reply({ content: "Invalid channel selection.", flags: MessageFlags.Ephemeral });
+                }
+
+                const selected = String(interaction.values?.[0] || '').trim().toLowerCase();
+                const allowed = new Set(['none', 'poison', 'fire', 'cutting', 'rot']);
+                if (!allowed.has(selected)) {
+                    return interaction.reply({ content: "Invalid terrain type.", flags: MessageFlags.Ephemeral });
+                }
+
+                const spawnChannel = await SpawnChannels.findOne({
+                    where: {
+                        id: spawnChannelId,
+                        guildId: interaction.guild.id
+                    }
+                });
+                if (!spawnChannel) {
+                    return interaction.reply({ content: "Spawn channel not found.", flags: MessageFlags.Ephemeral });
+                }
+
+                spawnChannel.terrainDamageType = selected === 'none'
+                    ? null
+                    : selected.charAt(0).toUpperCase() + selected.slice(1);
+                await spawnChannel.save();
+
+                const config = await SpawnConfig.findOne({
+                    where: { guildId: interaction.guild.id }
+                });
+                const channels = await SpawnChannels.findAll({
+                    where: { guildId: interaction.guild.id }
+                });
+
+                const channelList = channels.length
+                    ? channels.map(c =>
+                        `<#${c.channelId}> -> Monsters: ${Array.isArray(c.monsterIds) && c.monsterIds.length ? c.monsterIds.join(',') : 'legacy levels'} | Timer: ${c.baseTimer ?? config.baseTimer}s +/- ${c.variance ?? config.variance}s | XP x${c.xpMultiplier ?? 1} | Terrain: ${c.terrainDamageType || 'None'}`
+                    ).join('\n')
+                    : "No spawn channels configured.";
+
+                const embed = new EmbedBuilder()
+                    .setColor('#290003')
+                    .setTitle('Spawn Channel Manager')
+                    .setDescription(`Configured channels: **${channels.length}/${MAX_SPAWN_CHANNELS}**\n\n${channelList}`);
+
+                const row = new ActionRowBuilder().addComponents(
+                    new ButtonBuilder()
+                        .setCustomId(`spawn_add_channel_${ownerId}`)
+                        .setLabel('Add Channel')
+                        .setStyle(ButtonStyle.Success)
+                        .setDisabled(channels.length >= MAX_SPAWN_CHANNELS),
+
+                    new ButtonBuilder()
+                        .setCustomId(`spawn_edit_channel_${ownerId}`)
+                        .setLabel('Edit Channel')
+                        .setStyle(ButtonStyle.Primary)
+                        .setDisabled(!channels.length),
+
+                    new ButtonBuilder()
+                        .setCustomId(`spawn_terrain_${ownerId}`)
+                        .setLabel('Terrain Damage')
+                        .setStyle(ButtonStyle.Primary)
+                        .setDisabled(!channels.length),
+
+                    new ButtonBuilder()
+                        .setCustomId(`spawn_delete_channel_${ownerId}`)
+                        .setLabel('Delete Channel')
+                        .setStyle(ButtonStyle.Danger)
+                        .setDisabled(!channels.length),
+
+                    new ButtonBuilder()
+                        .setCustomId(`spawn_back_${ownerId}`)
+                        .setLabel('Back')
+                        .setStyle(ButtonStyle.Secondary)
+                );
+
+                return interaction.update({
+                    embeds: [embed],
+                    components: [row]
+                });
             }
 
             return routeSelectMenu(interaction, client);
@@ -178,7 +323,7 @@ module.exports = {
 
                 const channelList = channels.length
                     ? channels.map(c =>
-                        `<#${c.channelId}> -> Monsters: ${Array.isArray(c.monsterIds) && c.monsterIds.length ? c.monsterIds.join(',') : 'legacy levels'} | Timer: ${c.baseTimer ?? config.baseTimer}s +/- ${c.variance ?? config.variance}s | XP x${c.xpMultiplier ?? 1}`
+                        `<#${c.channelId}> -> Monsters: ${Array.isArray(c.monsterIds) && c.monsterIds.length ? c.monsterIds.join(',') : 'legacy levels'} | Timer: ${c.baseTimer ?? config.baseTimer}s +/- ${c.variance ?? config.variance}s | XP x${c.xpMultiplier ?? 1} | Terrain: ${c.terrainDamageType || 'None'}`
                     ).join('\n')
                     : "No spawn channels configured.";
 
@@ -201,6 +346,12 @@ module.exports = {
                         .setDisabled(!channels.length),
 
                     new ButtonBuilder()
+                        .setCustomId(`spawn_terrain_${ownerId}`)
+                        .setLabel('Terrain Damage')
+                        .setStyle(ButtonStyle.Primary)
+                        .setDisabled(!channels.length),
+
+                    new ButtonBuilder()
                         .setCustomId(`spawn_delete_channel_${ownerId}`)
                         .setLabel('Delete Channel')
                         .setStyle(ButtonStyle.Danger)
@@ -215,6 +366,57 @@ module.exports = {
                 return interaction.update({
                     embeds: [embed],
                     components: [row]
+                });
+            }
+
+            if (id.startsWith('spawn_terrain_')) {
+                const ownerId = id.split('_')[2];
+
+                if (interaction.user.id !== ownerId)
+                    return interaction.reply({ content: "Not your panel.", flags: MessageFlags.Ephemeral });
+
+                const channels = await SpawnChannels.findAll({
+                    where: { guildId: interaction.guild.id },
+                    order: [['id', 'ASC']]
+                });
+
+                if (!channels.length) {
+                    return interaction.reply({
+                        content: "No spawn channels to configure.",
+                        flags: MessageFlags.Ephemeral
+                    });
+                }
+
+                const embed = new EmbedBuilder()
+                    .setColor('#290003')
+                    .setTitle('Terrain Damage Setup')
+                    .setDescription(
+                        `Select a channel to configure terrain damage.\n\n` +
+                        channels.map(c => `<#${c.channelId}> -> ${c.terrainDamageType || 'None'}`).join('\n')
+                    );
+
+                const select = new StringSelectMenuBuilder()
+                    .setCustomId(`spawn_terrain_channel_${ownerId}`)
+                    .setPlaceholder('Select a channel')
+                    .addOptions(
+                        channels.slice(0, MAX_SPAWN_CHANNELS).map(c => ({
+                            label: `Channel ${c.id} • ${c.channelId}`,
+                            value: String(c.id),
+                            description: `Terrain: ${c.terrainDamageType || 'None'}`
+                        }))
+                    );
+
+                const selectRow = new ActionRowBuilder().addComponents(select);
+                const backRow = new ActionRowBuilder().addComponents(
+                    new ButtonBuilder()
+                        .setCustomId(`spawn_channels_${ownerId}`)
+                        .setLabel('Back')
+                        .setStyle(ButtonStyle.Secondary)
+                );
+
+                return interaction.update({
+                    embeds: [embed],
+                    components: [selectRow, backRow]
                 });
             }
 
@@ -309,19 +511,28 @@ module.exports = {
                 await profile.save();
                 const monster = spawnInstance.monster;
 
+                const options = userSkills.slice(0, 25).map(us => ({
+                    label: us.Skill.name,
+                    value: us.Skill.id.toString(),
+                    description: buildSkillSelectDescription(
+                        estimateSkillDamage(playerStats, monster, us.Skill, us.level),
+                        us.Skill
+                    )
+                }));
+
+                const healPotionQty = await getInventoryQuantity(profile.id, 'Healing Potion');
+                if (healPotionQty > 0 && options.length < 25) {
+                    options.push({
+                        label: 'Heal Potion',
+                        value: 'potion_heal',
+                        description: `${getHealPotionLabel()} | x${healPotionQty}`
+                    });
+                }
+
                 const select = new StringSelectMenuBuilder()
                     .setCustomId(`attack_${profile.id}`)
                     .setPlaceholder('Choose a skill')
-                    .addOptions(
-                        userSkills.slice(0, 25).map(us => ({
-                            label: us.Skill.name,
-                            value: us.Skill.id.toString(),
-                            description: buildSkillSelectDescription(
-                                estimateSkillDamage(playerStats, monster, us.Skill, us.level),
-                                us.Skill
-                            )
-                        }))
-                    );
+                    .addOptions(options);
 
                 const row = new ActionRowBuilder().addComponents(select);
 
@@ -404,7 +615,7 @@ module.exports = {
 
                 const channelList = channels
                     .map(c =>
-                        `<#${c.channelId}> -> Monsters: ${Array.isArray(c.monsterIds) && c.monsterIds.length ? c.monsterIds.join(',') : 'legacy levels'} | Timer: ${c.baseTimer ?? config.baseTimer}s +/- ${c.variance ?? config.variance}s | XP x${c.xpMultiplier ?? 1}`
+                        `<#${c.channelId}> -> Monsters: ${Array.isArray(c.monsterIds) && c.monsterIds.length ? c.monsterIds.join(',') : 'legacy levels'} | Timer: ${c.baseTimer ?? config.baseTimer}s +/- ${c.variance ?? config.variance}s | XP x${c.xpMultiplier ?? 1} | Terrain: ${c.terrainDamageType || 'None'}`
                     ).join('\n');
 
                 const embed = new EmbedBuilder()
@@ -419,7 +630,7 @@ module.exports = {
                         channels.slice(0, MAX_SPAWN_CHANNELS).map(c => ({
                             label: `Channel ${c.id} • ${c.channelId}`,
                             value: String(c.id),
-                            description: `Monsters ${Array.isArray(c.monsterIds) ? c.monsterIds.length : 0} | XP x${c.xpMultiplier ?? 1}`
+                            description: `Monsters ${Array.isArray(c.monsterIds) ? c.monsterIds.length : 0} | XP x${c.xpMultiplier ?? 1} | Terrain ${c.terrainDamageType || 'None'}`
                         }))
                     );
 
@@ -550,6 +761,14 @@ module.exports = {
         if (interaction.isModalSubmit()) {
 
             const id = interaction.customId;
+
+            if (id.startsWith('advguild_sell_modal_')) {
+                return handleAdventurerGuildSellModal(interaction);
+            }
+
+            if (id.startsWith('synthesis_modal_')) {
+                return handleSynthesisModal(interaction);
+            }
 
             if (id.startsWith('spawn_timer_modal_')) {
 

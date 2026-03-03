@@ -18,7 +18,7 @@ module.exports = {
 
             if (profiles) {
                 console.log('Profile already exists.');
-                return interaction.reply({ content: "You have already started your adventure!", ephemeral: false });
+                return interaction.reply({ content: "You have already started your adventure!" });
             }
 
             console.log('Creating new profile.');
@@ -112,7 +112,6 @@ module.exports = {
 
             return interaction.reply({
                 content: `Adventure started for **${name}**! You are now a **"small lesser taratect"**.${tutoText}`,
-                ephemeral: false
             });
         } catch (error) {
             console.error('Error executing start command:', error);

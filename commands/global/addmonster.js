@@ -1,6 +1,16 @@
 const { SlashCommandBuilder, MessageFlags } = require('discord.js');
 const { Monsters, MonsterSkills, Skills, sequelize } = require('../../database.js');
 
+const MONSTER_TYPE_CHOICES = [
+  { name: 'Monster', value: 'monster' },
+  { name: 'Human', value: 'human' },
+  { name: 'Fairy', value: 'fairy' },
+  { name: 'Demon', value: 'demon' },
+  { name: 'Wyrm', value: 'wyrm' },
+  { name: 'Dragon', value: 'dragon' },
+  { name: 'Elf', value: 'elf' }
+];
+
 module.exports = {
 
   data: new SlashCommandBuilder()
@@ -25,7 +35,12 @@ module.exports = {
     .addStringOption(o =>
       o.setName('image')
         .setDescription('Image file name (ex: goblin.png)')
-        .setRequired(true)),
+        .setRequired(true))
+    .addStringOption(o =>
+      o.setName('type')
+        .setDescription('Monster family/type')
+        .setRequired(false)
+        .addChoices(...MONSTER_TYPE_CHOICES)),
 
   async execute(interaction) {
 
@@ -40,6 +55,7 @@ module.exports = {
     const resistance = interaction.options.getInteger('resistance');
     const level = interaction.options.getInteger('level');
     const speed = interaction.options.getInteger('speed');
+    const monsterType = interaction.options.getString('type') || 'monster';
     const image = interaction.options.getString('image').trim();
     const skillsInput = interaction.options.getString('skills');
 
@@ -47,7 +63,6 @@ module.exports = {
 
     try {
 
-      // 🔹 Prevent duplicate monster name
       const existing = await Monsters.findOne({ where: { name } });
       if (existing) {
         await transaction.rollback();
@@ -57,10 +72,9 @@ module.exports = {
         });
       }
 
-      // 🔹 Parse skill IDs
       const skillIds = skillsInput
         .split(',')
-        .map(id => parseInt(id.trim()))
+        .map(id => parseInt(id.trim(), 10))
         .filter(id => !isNaN(id));
 
       if (!skillIds.length) {
@@ -71,7 +85,6 @@ module.exports = {
         });
       }
 
-      // 🔹 Validate skills
       const foundSkills = await Skills.findAll({
         where: { id: skillIds }
       });
@@ -87,7 +100,6 @@ module.exports = {
         });
       }
 
-      // 🔹 Create monster template
       const monster = await Monsters.create({
         name,
         hp,
@@ -100,10 +112,10 @@ module.exports = {
         resistance,
         speed,
         level,
-        image
+        image,
+        monsterType
       }, { transaction });
 
-      // 🔹 Link skills
       for (const skillId of skillIds) {
         await MonsterSkills.create({
           monsterId: monster.id,
@@ -114,7 +126,7 @@ module.exports = {
       await transaction.commit();
 
       return interaction.reply({
-        content: `✅ Monster **${name}** created successfully (ID: ${monster.id})`
+        content: `Monster **${name}** created successfully (ID: ${monster.id}, type: ${monsterType}).`
       });
 
     } catch (error) {

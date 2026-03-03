@@ -3,11 +3,12 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "start": "node scripts/start-bot-with-embedded-postgres.js",
+    "start": "node scripts/run-migrations.js && node scripts/start-bot-with-embedded-postgres.js",
     "test": "echo \"Error: no test specified\" && exit 1",
     "db:migrate": "node scripts/migrate-sqlite-to-postgres.js",
+    "db:migrations:run": "node scripts/run-migrations.js",
     "db:start": "node scripts/start-embedded-postgres.js",
-    "bot:start": "node scripts/start-bot-with-embedded-postgres.js"
+    "bot:start": "node scripts/run-migrations.js && node scripts/start-bot-with-embedded-postgres.js"
   },
   "author": "",
   "license": "ISC",

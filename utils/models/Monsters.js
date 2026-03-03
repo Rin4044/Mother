@@ -16,6 +16,12 @@ module.exports = (sequelize) => {
             allowNull: false
         },
 
+        monsterType: {
+            type: DataTypes.STRING,
+            allowNull: false,
+            defaultValue: 'monster'
+        },
+
         // ========================
         // BASE STATS (TEMPLATE)
         // ========================

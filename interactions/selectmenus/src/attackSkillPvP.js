@@ -1,4 +1,5 @@
 const { Profiles, Skills, UserSkills, database, activeFights, clearFightTimeout, scheduleTurnTimeout, commands, global, arena, calculatePlayerStats, utils, playerStats, startCombat, combatEngine, resolveImage, resolveProfileImage, calculateEffectiveSkillPower, grantSkillXp, skillProgression, Op, sequelize, EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder, MessageFlags } = require('discord.js');
+const { isAbyssAttack } = require('../../../utils/abyssSkill');
 
 const ALLOWED_COMBAT_TYPES = ['Physical', 'Magic', 'Debuff'];
 
@@ -268,13 +269,14 @@ function estimateSkillDamage(attackerStats, defenderStats, skill, skillLevel = 1
     const effectivePower = (Number(skill?.power) || 0) + ((Math.max(1, Number(skillLevel) || 1) - 1) * 0.1);
     let attackStat = 0;
     let defenseStat = 0;
+    const abyssAttack = isAbyssAttack(skill);
 
     if (skill?.effect_type_main === 'Physical') {
         attackStat = Math.max(0, Number(attackerStats?.offense) || 0);
-        defenseStat = Math.max(0, Number(defenderStats?.defense) || 0);
+        defenseStat = abyssAttack ? 0 : Math.max(0, Number(defenderStats?.defense) || 0);
     } else if (skill?.effect_type_main === 'Magic') {
         attackStat = Math.max(0, Number(attackerStats?.magic) || 0);
-        defenseStat = Math.max(0, Number(defenderStats?.resistance) || 0);
+        defenseStat = abyssAttack ? 0 : Math.max(0, Number(defenderStats?.resistance) || 0);
     } else {
         return 0;
     }

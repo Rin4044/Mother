@@ -21,6 +21,31 @@ module.exports = (sequelize) => {
             type: DataTypes.STRING,
             allowNull: true,
             defaultValue: null
+        },
+        adminLogChannelId: {
+            type: DataTypes.STRING,
+            allowNull: true,
+            defaultValue: null
+        },
+        adminWhitelistUserIds: {
+            type: DataTypes.JSON,
+            allowNull: false,
+            defaultValue: []
+        },
+        adminSanctionState: {
+            type: DataTypes.JSON,
+            allowNull: false,
+            defaultValue: { users: {} }
+        },
+        adminSecurityState: {
+            type: DataTypes.JSON,
+            allowNull: false,
+            defaultValue: {
+                panicMode: false,
+                panicUpdatedAt: 0,
+                panicUpdatedBy: null,
+                panicReason: null
+            }
         }
     }, {
         timestamps: true

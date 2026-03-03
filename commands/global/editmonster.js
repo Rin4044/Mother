@@ -1,6 +1,16 @@
 const { SlashCommandBuilder, EmbedBuilder, MessageFlags } = require('discord.js');
 const { Monsters } = require('../../database.js');
 
+const MONSTER_TYPE_CHOICES = [
+    { name: 'Monster', value: 'monster' },
+    { name: 'Human', value: 'human' },
+    { name: 'Fairy', value: 'fairy' },
+    { name: 'Demon', value: 'demon' },
+    { name: 'Wyrm', value: 'wyrm' },
+    { name: 'Dragon', value: 'dragon' },
+    { name: 'Elf', value: 'elf' }
+];
+
 module.exports = {
 
     data: new SlashCommandBuilder()
@@ -24,6 +34,11 @@ module.exports = {
         .addIntegerOption(o => o.setName('resistance').setDescription('New Resistance'))
         .addIntegerOption(o => o.setName('speed').setDescription('New Speed'))
         .addIntegerOption(o => o.setName('level').setDescription('New Level'))
+        .addStringOption(o =>
+            o.setName('type')
+                .setDescription('New monster family/type')
+                .addChoices(...MONSTER_TYPE_CHOICES)
+        )
         .addStringOption(o => o.setName('image').setDescription('New image filename')),
 
     async execute(interaction) {
@@ -69,13 +84,12 @@ module.exports = {
 
                 const dbField = fieldMap[optionName];
                 updates[dbField] = value;
-
-                // Sync remaining stats if main stats changed
-                if (dbField === 'hp') updates.remainingHp = value;
-                if (dbField === 'mp') updates.remainingMp = value;
-                if (dbField === 'stamina') updates.remainingStamina = value;
-                if (dbField === 'vitalStamina') updates.remainingVitalStamina = value;
             }
+        }
+
+        const typeValue = interaction.options.getString('type');
+        if (typeValue !== null) {
+            updates.monsterType = typeValue;
         }
 
         const imageValue = interaction.options.getString('image');
@@ -94,10 +108,10 @@ module.exports = {
 
         const embed = new EmbedBuilder()
             .setColor('#290003')
-            .setTitle(`✏️ Monster Updated: ${monster.name}`)
+            .setTitle(`Monster Updated: ${monster.name}`)
             .setDescription(
                 Object.entries(updates)
-                    .map(([key, value]) => `**${key}** → ${value}`)
+                    .map(([key, value]) => `**${key}** -> ${value}`)
                     .join('\n')
             );
 

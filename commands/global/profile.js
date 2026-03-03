@@ -5,6 +5,7 @@ const fs = require('fs');
 
 const { calculatePlayerStats } = require('../../utils/playerStats');
 const { progressTutorial } = require('../../utils/tutorialService');
+const { formatCrystalLabel } = require('../../utils/coreEmoji');
 
 const IMAGE_MAP = {
     'small lesser taratect': 'small_lesser_taratect.png',
@@ -68,7 +69,7 @@ module.exports = {
                 `**Level:** ${profile.level}\n` +
                 `**XP:** ${profile.xp}\n` +
                 `**Skill Points:** ${profile.skillPoints}\n` +
-                `**Crystals:** ${profile.crystals || 0}`
+                `**Crystals:** ${formatCrystalLabel(profile.crystals || 0)}`
             )
             .addFields({
                 name: 'Stats',

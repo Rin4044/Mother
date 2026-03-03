@@ -4,8 +4,9 @@ const fs = require('fs');
 const { Op } = require('sequelize');
 
 const { deployCommands } = require('../functions');
-const { SpawnChannels, SpawnConfig, Monsters, SpawnInstances } = require('../database');
+const { SpawnChannels, SpawnConfig, Monsters, SpawnInstances, Profiles } = require('../database');
 const { rollRarity } = require('../utils/raritySystem');
+const { refreshAllAdventurerGuildPanels } = require('../utils/adventurerGuildService');
 
 module.exports = {
     name: 'ready',
@@ -15,6 +16,11 @@ module.exports = {
         console.log(`-> Bot started as ${client.user.tag}`);
 
         await deployCommands(client);
+
+        await recoverInterruptedCombats();
+        await refreshAllAdventurerGuildPanels(client).catch((error) => {
+            console.error('Failed to refresh adventurer guild panels on startup:', error);
+        });
 
         const loadedCommands = await client.application.commands.fetch();
         console.log(`-> Loaded commands: ${loadedCommands.size}`);
@@ -47,7 +53,8 @@ module.exports = {
                         const expiredInstances = await SpawnInstances.findAll({
                             where: {
                                 spawnChannelId: channel.id,
-                                despawnAt: { [Op.lte]: now }
+                                despawnAt: { [Op.lte]: now },
+                                occupiedBy: null
                             }
                         });
 
@@ -95,6 +102,27 @@ module.exports = {
     }
 };
 
+async function recoverInterruptedCombats() {
+    try {
+        const [clearedCombatStates, releasedSpawnLocks] = await Promise.all([
+            Profiles.update(
+                { combatState: null },
+                { where: { combatState: { [Op.ne]: null } } }
+            ),
+            SpawnInstances.update(
+                { occupiedBy: null },
+                { where: { occupiedBy: { [Op.ne]: null } } }
+            )
+        ]);
+
+        console.log(
+            `-> Combat recovery complete: cleared ${clearedCombatStates[0]} profile lock(s), released ${releasedSpawnLocks[0]} spawn lock(s).`
+        );
+    } catch (error) {
+        console.error('Combat recovery on startup failed:', error);
+    }
+}
+
 async function spawnMonster(client, channel, config) {
     const allowedIds = normalizeIntegerArray(channel.monsterIds);
     const levelPool = normalizeIntegerArray(channel.levels);
@@ -141,7 +169,8 @@ async function spawnMonster(client, channel, config) {
         magic: Math.floor(monster.magic * rarity.multiplier),
         resistance: Math.floor(monster.resistance * rarity.multiplier),
         speed: Math.floor(monster.speed * rarity.multiplier),
-        xpMultiplier: rarity.xp
+        xpMultiplier: rarity.xp,
+        terrainDamageType: channel.terrainDamageType || null
     };
 
     const spawnInstance = await SpawnInstances.create({
@@ -179,7 +208,8 @@ async function spawnMonster(client, channel, config) {
         .setTitle(scaledMonster.name)
         .setDescription(
             `Rarity: **${scaledMonster.rarity}**\n` +
-            `Level: **${scaledMonster.level}**`
+            `Level: **${scaledMonster.level}**` +
+            (scaledMonster.terrainDamageType ? `\nTerrain: **${scaledMonster.terrainDamageType}**` : '')
         );
 
     const imageAttachment = resolveMonsterImageAttachment(monster.image);

@@ -2,6 +2,9 @@
 // Universal Combat Engine
 // ===============================
 
+const { IMMORTALITY_CONFIG } = require('./combatPassiveConfig');
+const { isAbyssAttack } = require('./abyssSkill');
+
 function calculateScaling(monster, tier, stage) {
 
     const tierMultiplier = 1 + (tier - 1) * 0.22;
@@ -50,7 +53,12 @@ function consumeStaminaWithVital(entity, staminaCost = 0) {
 
     const reductionPct = Math.max(
         0,
-        Math.min(90, Number(entity?.rulerPassives?.costReductionPct) || 0)
+        Math.min(
+            90,
+            Number(entity?.rulerPassives?.spCostReductionPct)
+            || Number(entity?.rulerPassives?.costReductionPct)
+            || 0
+        )
     );
     const effectiveCost = Math.max(0, Math.ceil(staminaCost * (1 - (reductionPct / 100))));
     if (effectiveCost <= 0) return;
@@ -71,7 +79,12 @@ function consumeMp(entity, mpCost = 0) {
 
     const reductionPct = Math.max(
         0,
-        Math.min(90, Number(entity?.rulerPassives?.costReductionPct) || 0)
+        Math.min(
+            90,
+            Number(entity?.rulerPassives?.mpCostReductionPct)
+            || Number(entity?.rulerPassives?.costReductionPct)
+            || 0
+        )
     );
     const effectiveCost = Math.max(0, Math.ceil(mpCost * (1 - (reductionPct / 100))));
     if (effectiveCost <= 0) return true;
@@ -98,6 +111,45 @@ function applyVitalDeath(entity) {
     return true;
 }
 
+function hasEffect(entity, effectType) {
+    const wanted = String(effectType || '').trim().toLowerCase();
+    if (!wanted) return false;
+    const effects = Array.isArray(entity?.effects) ? entity.effects : [];
+    return effects.some((effect) => String(effect?.type || '').trim().toLowerCase() === wanted);
+}
+
+function tryTriggerImmortality(entity, log = null, isEnemy = false) {
+    const enabled = !!entity?.rulerPassives?.immortalityEnabled;
+    if (!enabled) return false;
+    if (hasEffect(entity, IMMORTALITY_CONFIG.sealEffectType)) return false;
+
+    const hp = Math.max(0, Number(entity?.hp) || 0);
+    const vital = Math.max(0, Number(entity?.vitalStamina) || 0);
+    if (hp > 0 && vital > 0) return false;
+
+    if (!Array.isArray(entity.effects)) entity.effects = [];
+    const maxHp = Math.max(1, Number(entity?.maxHp) || hp || 1);
+    const maxVital = Math.max(1, Number(entity?.maxVitalStamina) || Number(entity?.vitalStamina) || 1);
+    entity.hp = Math.max(1, Math.floor(maxHp * (IMMORTALITY_CONFIG.reviveHpPercent / 100)));
+    entity.vitalStamina = Math.max(1, Math.floor(maxVital * (IMMORTALITY_CONFIG.reviveVitalPercent / 100)));
+
+    entity.effects.push({
+        type: IMMORTALITY_CONFIG.sealEffectType,
+        duration: 999,
+        damage: 0
+    });
+    entity.effects.push({
+        type: IMMORTALITY_CONFIG.exhaustionEffectType,
+        duration: IMMORTALITY_CONFIG.exhaustionDuration,
+        damage: 0
+    });
+
+    if (log) {
+        log.push(`${isEnemy ? 'Enemy' : 'You'} triggered Immortality and survived a fatal blow.`);
+    }
+    return true;
+}
+
 // ===============================
 // DAMAGE CALCULATION
 // ===============================
@@ -107,14 +159,16 @@ function calculateDamage(attacker, defender, skill) {
     let attackStat = 0;
     let defenseStat = 0;
 
+    const abyssAttack = isAbyssAttack(skill);
+
     if (skill.effect_type_main === 'Physical') {
         attackStat = getEffectiveStat(attacker, 'offense');
-        defenseStat = getEffectiveStat(defender, 'defense');
+        defenseStat = abyssAttack ? 0 : getEffectiveStat(defender, 'defense');
     }
 
     if (skill.effect_type_main === 'Magic') {
         attackStat = getEffectiveStat(attacker, 'magic');
-        defenseStat = getEffectiveStat(defender, 'resistance');
+        defenseStat = abyssAttack ? 0 : getEffectiveStat(defender, 'resistance');
     }
 
     if (attackStat <= 0)
@@ -142,8 +196,11 @@ function calculateDamage(attacker, defender, skill) {
     }
 
     const reducedDamage = rawDamage * (100 / (100 + defenseStat));
-
-    return Math.max(0, Math.floor(reducedDamage));
+    let finalDamage = Math.max(0, Math.floor(reducedDamage));
+    if (hasEffect(attacker, IMMORTALITY_CONFIG.exhaustionEffectType)) {
+        finalDamage = Math.max(0, Math.floor(finalDamage * IMMORTALITY_CONFIG.outgoingMultiplierWhileExhausted));
+    }
+    return finalDamage;
 }
 
 function getHpRatio(entity) {
@@ -186,37 +243,49 @@ function gainShield(entity, amount) {
     entity.shield = Math.max(0, current + Math.max(0, Number(amount) || 0));
 }
 
-function applyIncomingDamage(target, rawDamage) {
+function applyIncomingDamage(target, rawDamage, options = {}) {
     ensureCombatRuntimeState(target);
     let damage = Math.max(0, Number(rawDamage) || 0);
     if (damage <= 0) return 0;
+    const ignoreMitigation = !!options.ignoreMitigation;
+    const ignoreShield = !!options.ignoreShield;
 
     const passives = target?.rulerPassives || {};
     const hpRatio = getHpRatio(target);
-    let reductionPct = Math.max(0, Number(passives.baseDamageReductionPct) || 0);
+    let reductionPct = 0;
 
-    if (hpRatio <= 0.35) {
-        reductionPct += Math.max(0, Number(passives.lowHpDamageReductionPct) || 0);
-    }
+    if (!ignoreMitigation) {
+        reductionPct = Math.max(0, Number(passives.baseDamageReductionPct) || 0);
 
-    if (reductionPct > 0) {
-        damage *= Math.max(0, 1 - (Math.min(90, reductionPct) / 100));
-    }
+        if (hpRatio <= 0.35) {
+            reductionPct += Math.max(0, Number(passives.lowHpDamageReductionPct) || 0);
+        }
 
-    if (hpRatio <= 0.5) {
-        const vulnPct = Math.max(0, Number(passives.lowHpVulnerabilityPct) || 0);
-        if (vulnPct > 0) {
-            damage *= 1 + (Math.min(90, vulnPct) / 100);
+        if (reductionPct > 0) {
+            damage *= Math.max(0, 1 - (Math.min(90, reductionPct) / 100));
+        }
+
+        if (hasEffect(target, IMMORTALITY_CONFIG.exhaustionEffectType)) {
+            damage *= IMMORTALITY_CONFIG.incomingMultiplierWhileExhausted;
+        }
+
+        if (hpRatio <= 0.5) {
+            const vulnPct = Math.max(0, Number(passives.lowHpVulnerabilityPct) || 0);
+            if (vulnPct > 0) {
+                damage *= 1 + (Math.min(90, vulnPct) / 100);
+            }
         }
     }
 
     damage = Math.max(0, Math.floor(damage));
 
-    const shield = Math.max(0, Number(target.shield) || 0);
-    if (shield > 0) {
-        const absorbed = Math.min(shield, damage);
-        target.shield = shield - absorbed;
-        damage -= absorbed;
+    if (!ignoreShield) {
+        const shield = Math.max(0, Number(target.shield) || 0);
+        if (shield > 0) {
+            const absorbed = Math.min(shield, damage);
+            target.shield = shield - absorbed;
+            damage -= absorbed;
+        }
     }
 
     target.hp = Math.max(0, Math.floor((target.hp || 0) - damage));
@@ -265,7 +334,11 @@ function startCombat({ attackerStats, defenderStats, attackerCombat, defenderCom
     };
     ensureCombatRuntimeState(updatedDefender);
 
-    const finalDamage = applyIncomingDamage(updatedDefender, damage);
+    const abyssAttack = isAbyssAttack(skill);
+    const finalDamage = applyIncomingDamage(updatedDefender, damage, {
+        ignoreMitigation: abyssAttack,
+        ignoreShield: abyssAttack
+    });
     applyEvilEyeSpecialEffect(skill, updatedAttacker, updatedDefender, null);
 
     return {
@@ -337,6 +410,17 @@ function processStatusDamage(entity, label, log, statusDamageByType = null) {
         }
 
         const baseDamage = Math.max(0, Number(effect.damage) || 0);
+        if (baseDamage <= 0) {
+            const durationLeft = Math.max(0, Number(effect.duration) || 0) - 1;
+            if (durationLeft > 0) {
+                remainingEffects.push({
+                    ...effect,
+                    duration: durationLeft
+                });
+            }
+            continue;
+        }
+
         const reductionPercent = getStatusResistancePercent(entity, effect.type);
         const finalDamage = Math.max(
             0,
@@ -404,6 +488,10 @@ function executeTurn(state, skillA, skillPoolB) {
     let playerSkillUses = 0;
     let playerDamageDone = 0;
     const statusDamageTaken = { player: {}, enemy: {} };
+    const endTurnRegen = {
+        player: { hpGain: 0, mpGain: 0, spGain: 0 },
+        enemy: { hpGain: 0, mpGain: 0, spGain: 0 }
+    };
     ensureCombatRuntimeState(state.entityA);
     ensureCombatRuntimeState(state.entityB);
     const { aTurns, bTurns } =
@@ -414,15 +502,19 @@ function executeTurn(state, skillA, skillPoolB) {
     for (let i = 0; i < aTurns; i++) {
 
         consumeMp(state.entityA, skillA.mp_cost || 0);
-        if (applyVitalDeath(state.entityA))
-            return { victory: false, defeat: true, log, state, playerSkillUses };
+        if (applyVitalDeath(state.entityA) && !tryTriggerImmortality(state.entityA, log, false))
+            return { victory: false, defeat: true, log, state, playerSkillUses, playerDamageDone, statusDamageTaken, endTurnRegen };
 
         consumeStaminaWithVital(state.entityA, skillA.sp_cost || 0);
-        if (applyVitalDeath(state.entityA))
-            return { victory: false, defeat: true, log, state, playerSkillUses };
+        if (applyVitalDeath(state.entityA) && !tryTriggerImmortality(state.entityA, log, false))
+            return { victory: false, defeat: true, log, state, playerSkillUses, playerDamageDone, statusDamageTaken, endTurnRegen };
 
         const damage = calculateDamage(state.entityA, state.entityB, skillA);
-        const finalDamage = applyIncomingDamage(state.entityB, damage);
+        const abyssAttack = isAbyssAttack(skillA);
+        const finalDamage = applyIncomingDamage(state.entityB, damage, {
+            ignoreMitigation: abyssAttack,
+            ignoreShield: abyssAttack
+        });
         playerSkillUses++;
         playerDamageDone += finalDamage;
 
@@ -434,8 +526,8 @@ function executeTurn(state, skillA, skillPoolB) {
         applyStatusEffect(skillA, state.entityA, state.entityB);
         applyEvilEyeSpecialEffect(skillA, state.entityA, state.entityB, log);
 
-        if (state.entityB.hp <= 0)
-            return { victory: true, defeat: false, log, state, playerSkillUses, playerDamageDone };
+        if (state.entityB.hp <= 0 && !tryTriggerImmortality(state.entityB, log, true))
+            return { victory: true, defeat: false, log, state, playerSkillUses, playerDamageDone, statusDamageTaken, endTurnRegen };
     }
 
     // ===== ENTITY B =====
@@ -445,15 +537,19 @@ function executeTurn(state, skillA, skillPoolB) {
         const skillB = chooseSkill(skillPoolB) || BASIC_MONSTER_ATTACK;
 
         consumeMp(state.entityB, skillB.mp_cost || 0);
-        if (applyVitalDeath(state.entityB))
-            return { victory: true, defeat: false, log, state, playerSkillUses, playerDamageDone };
+        if (applyVitalDeath(state.entityB) && !tryTriggerImmortality(state.entityB, log, true))
+            return { victory: true, defeat: false, log, state, playerSkillUses, playerDamageDone, statusDamageTaken, endTurnRegen };
 
         consumeStaminaWithVital(state.entityB, skillB.sp_cost || 0);
-        if (applyVitalDeath(state.entityB))
-            return { victory: true, defeat: false, log, state, playerSkillUses, playerDamageDone };
+        if (applyVitalDeath(state.entityB) && !tryTriggerImmortality(state.entityB, log, true))
+            return { victory: true, defeat: false, log, state, playerSkillUses, playerDamageDone, statusDamageTaken, endTurnRegen };
 
         const damage = calculateDamage(state.entityB, state.entityA, skillB);
-        const finalDamage = applyIncomingDamage(state.entityA, damage);
+        const abyssAttack = isAbyssAttack(skillB);
+        const finalDamage = applyIncomingDamage(state.entityA, damage, {
+            ignoreMitigation: abyssAttack,
+            ignoreShield: abyssAttack
+        });
 
         log.push(`Enemy used ${skillB.name} -> ${finalDamage} damage`);
 
@@ -463,20 +559,20 @@ function executeTurn(state, skillA, skillPoolB) {
         applyStatusEffect(skillB, state.entityB, state.entityA);
         applyEvilEyeSpecialEffect(skillB, state.entityB, state.entityA, log, true);
 
-        if (state.entityA.hp <= 0)
-            return { victory: false, defeat: true, log, state, playerSkillUses, playerDamageDone };
+        if (state.entityA.hp <= 0 && !tryTriggerImmortality(state.entityA, log, false))
+            return { victory: false, defeat: true, log, state, playerSkillUses, playerDamageDone, statusDamageTaken, endTurnRegen };
     }
 
     processStatusDamage(state.entityA, 'Player', log, statusDamageTaken.player);
-    if (state.entityA.hp <= 0)
-        return { victory: false, defeat: true, log, state, playerSkillUses, playerDamageDone, statusDamageTaken };
+    if (state.entityA.hp <= 0 && !tryTriggerImmortality(state.entityA, log, false))
+        return { victory: false, defeat: true, log, state, playerSkillUses, playerDamageDone, statusDamageTaken, endTurnRegen };
 
     processStatusDamage(state.entityB, 'Enemy', log, statusDamageTaken.enemy);
-    if (state.entityB.hp <= 0)
-        return { victory: true, defeat: false, log, state, playerSkillUses, playerDamageDone, statusDamageTaken };
+    if (state.entityB.hp <= 0 && !tryTriggerImmortality(state.entityB, log, true))
+        return { victory: true, defeat: false, log, state, playerSkillUses, playerDamageDone, statusDamageTaken, endTurnRegen };
 
-    applyEndTurnRulerRegen(state.entityA, log, false);
-    applyEndTurnRulerRegen(state.entityB, log, true);
+    endTurnRegen.player = applyEndTurnRulerRegen(state.entityA, log, false);
+    endTurnRegen.enemy = applyEndTurnRulerRegen(state.entityB, log, true);
 
     return {
         victory: false,
@@ -485,7 +581,8 @@ function executeTurn(state, skillA, skillPoolB) {
         state,
         playerSkillUses,
         playerDamageDone,
-        statusDamageTaken
+        statusDamageTaken,
+        endTurnRegen
     };
 }
 
@@ -552,19 +649,39 @@ function applyOnDamagedRulerPassives(target, finalDamage, log = null, isEnemy = 
 }
 
 function applyEndTurnRulerRegen(entity, log = null, isEnemy = false) {
+    if (hasEffect(entity, IMMORTALITY_CONFIG.exhaustionEffectType)) {
+        return { hpGain: 0, mpGain: 0, spGain: 0 };
+    }
     const passives = entity?.rulerPassives || {};
-    const regenPct = Math.max(0, Number(passives.endTurnRegenPct) || 0);
-    if (regenPct <= 0) return;
+    const legacyRegenPct = Math.max(0, Number(passives.endTurnRegenPct) || 0);
+    const hpRegenPct = Math.max(0, Number(passives.hpRegenPct) || 0);
+    const mpRegenPct = Math.max(0, Number(passives.mpRegenPct) || legacyRegenPct);
+    const spRegenPct = Math.max(0, Number(passives.spRegenPct) || legacyRegenPct);
+    if (hpRegenPct <= 0 && mpRegenPct <= 0 && spRegenPct <= 0) {
+        return { hpGain: 0, mpGain: 0, spGain: 0 };
+    }
 
+    const maxHp = Math.max(1, Number(entity?.maxHp) || Number(entity?.hp) || 1);
     const maxMp = Math.max(1, Number(entity?.maxMp) || Number(entity?.mp) || 1);
     const maxStamina = Math.max(1, Number(entity?.maxStamina) || Number(entity?.stamina) || 1);
-    const mpGain = Math.max(0, Math.floor(maxMp * (Math.min(30, regenPct) / 100)));
-    const spGain = Math.max(0, Math.floor(maxStamina * (Math.min(30, regenPct) / 100)));
-    if (mpGain <= 0 && spGain <= 0) return;
+    const hpGain = Math.max(0, Math.floor(maxHp * (Math.min(20, hpRegenPct) / 100)));
+    const mpGain = Math.max(0, Math.floor(maxMp * (Math.min(30, mpRegenPct) / 100)));
+    const spGain = Math.max(0, Math.floor(maxStamina * (Math.min(30, spRegenPct) / 100)));
+    if (hpGain <= 0 && mpGain <= 0 && spGain <= 0) {
+        return { hpGain: 0, mpGain: 0, spGain: 0 };
+    }
 
+    entity.hp = Math.min(maxHp, Math.max(0, Number(entity?.hp) || 0) + hpGain);
     entity.mp = Math.min(maxMp, Math.max(0, Number(entity?.mp) || 0) + mpGain);
     entity.stamina = Math.min(maxStamina, Math.max(0, Number(entity?.stamina) || 0) + spGain);
-    if (log) log.push(`${isEnemy ? 'Enemy' : 'You'} regenerated: MP +${mpGain}, SP +${spGain}`);
+    if (log) {
+        const parts = [];
+        if (hpGain > 0) parts.push(`HP +${hpGain}`);
+        if (mpGain > 0) parts.push(`MP +${mpGain}`);
+        if (spGain > 0) parts.push(`SP +${spGain}`);
+        log.push(`${isEnemy ? 'Enemy' : 'You'} regenerated: ${parts.join(', ')}`);
+    }
+    return { hpGain, mpGain, spGain };
 }
 
 function applyEvilEyeSpecialEffect(skill, attacker, target, log = null, isEnemy = false) {

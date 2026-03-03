@@ -5,6 +5,29 @@ const fs = require('fs');
 const http = require('http');
 const { Profiles } = require('./database.js');
 const { updateAllGuildStatuses, sendCrashReport } = require('./utils/botLogService');
+const { assertOwnerOnly, assertWhitelistedAdmin } = require('./utils/adminAccessService');
+
+const WHITELIST_REQUIRED_COMMANDS = new Set([
+    'resetdata',
+    'addtitle',
+    'addskill',
+    'addmonster',
+    'edittitle',
+    'editskill',
+    'editmonster',
+    'deletetitle',
+    'deleteskill',
+    'removetitle',
+    'givetitle',
+    'givelvl',
+    'adminprofile',
+    'changerace',
+    'clearcombat',
+    'config',
+    'questboard',
+    'admin',
+    'adminlog'
+]);
 
 let token = process.env.DISCORD_TOKEN || null;
 if (!token) {
@@ -143,7 +166,7 @@ client.on('shardReconnecting', (shardId) => {
     updateAllGuildStatuses(client, 'restarting', `Shard ${shardId} reconnecting`).catch(() => {});
 });
 
-client.on('shardResume', (replayedEvents, shardId) => {
+client.on('shardResume', (shardId, replayedEvents) => {
     console.log(`Discord shard ${shardId} resumed (${replayedEvents} replayed events).`);
     clearDisconnectRestartTimer();
     updateAllGuildStatuses(client, 'online', `Shard ${shardId} resumed (${replayedEvents} replayed events)`).catch(() => {});
@@ -213,6 +236,40 @@ client.on('interactionCreate', async (interaction) => {
 
     const command = client.commands.get(interaction.commandName);
     if (!command) return;
+
+    if (WHITELIST_REQUIRED_COMMANDS.has(interaction.commandName)) {
+        let subcommand = null;
+        let subcommandGroup = null;
+        try {
+            subcommand = interaction.options.getSubcommand(false);
+        } catch (_) {
+            subcommand = null;
+        }
+        try {
+            subcommandGroup = interaction.options.getSubcommandGroup(false);
+        } catch (_) {
+            subcommandGroup = null;
+        }
+
+        // /admin whitelist, /admin sanctions, /admin security are owner-only (even if not in whitelist)
+        if (interaction.commandName === 'admin' && (subcommandGroup === 'whitelist' || subcommandGroup === 'sanctions' || subcommandGroup === 'security')) {
+            const ownerAllowed = await assertOwnerOnly(interaction, {
+                logDenied: true,
+                commandName: 'admin',
+                actionGroup: subcommandGroup || 'owner',
+                actionName: subcommand || 'unknown'
+            });
+            if (!ownerAllowed) return;
+        } else {
+            const allowed = await assertWhitelistedAdmin(interaction, {
+                logDenied: true,
+                commandName: interaction.commandName,
+                actionGroup: subcommandGroup || 'command',
+                actionName: subcommand || 'execute'
+            });
+            if (!allowed) return;
+        }
+    }
 
     try {
         await command.execute(interaction);

@@ -4,6 +4,7 @@ const { Profiles, UserSkills, Skills } = require('../../database.js');
 const { progressTutorial } = require('../../utils/tutorialService');
 
 const MAX_EQUIPPED_SKILLS = 5;
+const ALLOWED_LOADOUT_TYPES = ['Physical', 'Magic', 'Debuff', 'Buff'];
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -78,6 +79,14 @@ module.exports = {
             if (!userSkill || !userSkill.Skill) {
                 return interaction.reply({
                     content: 'You do not own this skill.',
+                    flags: MessageFlags.Ephemeral
+                });
+            }
+
+            const mainType = String(userSkill.Skill.effect_type_main || '').trim();
+            if (!ALLOWED_LOADOUT_TYPES.includes(mainType)) {
+                return interaction.reply({
+                    content: 'This skill cannot be equipped. Only combat skills can be equipped in loadout.',
                     flags: MessageFlags.Ephemeral
                 });
             }

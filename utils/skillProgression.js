@@ -5,8 +5,18 @@ const XP_PER_SKILL_USE = 2;
 const POWER_BONUS_PER_LEVEL = 0.1;
 
 function getSkillLevelCap(skillTier = 1, skillName = '') {
-    if (String(skillName || '').trim().toLowerCase() === 'taboo') {
+    const normalizedName = String(skillName || '').trim().toLowerCase();
+    if (normalizedName === 'taboo') {
         return 10;
+    }
+    if (
+        normalizedName.includes('nullification') ||
+        normalizedName.includes('nulification') ||
+        normalizedName.includes('nulhification') ||
+        normalizedName.includes('nullify') ||
+        normalizedName.includes('nulhify')
+    ) {
+        return 1;
     }
 
     return [1, 2].includes(Number(skillTier) || 1) ? 10 : 20;
@@ -62,13 +72,19 @@ async function grantSkillUsageXp(profileId, skillId, uses = 1) {
     const beforeLevel = userSkill.level || 1;
     const hardCap = getSkillLevelCap(baseSkill.tier, baseSkill.name);
     if (beforeLevel >= hardCap) {
+        if (beforeLevel > hardCap || (userSkill.xp || 0) > 0) {
+            await userSkill.update({
+                level: hardCap,
+                xp: 0
+            });
+        }
         const unlockedSkill = await tryUnlockNextSkill(profileId, baseSkill);
         if (!unlockedSkill) return null;
         return {
             gainedXp: 0,
             previousLevel: beforeLevel,
-            level: beforeLevel,
-            leveledUp: false,
+            level: hardCap,
+            leveledUp: hardCap > beforeLevel,
             unlockedSkill
         };
     }
@@ -114,13 +130,19 @@ async function grantSkillXp(profileId, skillId, gainedXp = 0) {
     const beforeLevel = userSkill.level || 1;
     const hardCap = getSkillLevelCap(baseSkill.tier, baseSkill.name);
     if (beforeLevel >= hardCap) {
+        if (beforeLevel > hardCap || (userSkill.xp || 0) > 0) {
+            await userSkill.update({
+                level: hardCap,
+                xp: 0
+            });
+        }
         const unlockedSkill = await tryUnlockNextSkill(profileId, baseSkill);
         if (!unlockedSkill) return null;
         return {
             gainedXp: 0,
             previousLevel: beforeLevel,
-            level: beforeLevel,
-            leveledUp: false,
+            level: hardCap,
+            leveledUp: hardCap > beforeLevel,
             unlockedSkill
         };
     }

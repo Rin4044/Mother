@@ -31,6 +31,9 @@ const TutorialProgress = require('./utils/models/TutorialProgress')(sequelize);
 const RaidInstances = require('./utils/models/RaidInstances')(sequelize);
 const InventoryItems = require('./utils/models/InventoryItems')(sequelize);
 const BotLogConfig = require('./utils/models/BotLogConfig')(sequelize);
+const AdventurerGuildConfig = require('./utils/models/AdventurerGuildConfig')(sequelize);
+const AdminActionLog = require('./utils/models/AdminActionLog')(sequelize);
+const PlayerGuild = require('./utils/models/PlayerGuild')(sequelize);
 
 Profiles.hasMany(UserSkills, { foreignKey: 'profileId', onDelete: 'CASCADE' });
 UserSkills.belongsTo(Profiles, { foreignKey: 'profileId' });
@@ -79,6 +82,16 @@ TutorialProgress.belongsTo(Profiles, { foreignKey: 'profileId' });
 Profiles.hasMany(InventoryItems, { foreignKey: 'profileId', onDelete: 'CASCADE' });
 InventoryItems.belongsTo(Profiles, { foreignKey: 'profileId' });
 
+PlayerGuild.hasMany(Profiles, {
+    foreignKey: 'playerGuildId',
+    sourceKey: 'id',
+    onDelete: 'SET NULL'
+});
+Profiles.belongsTo(PlayerGuild, {
+    foreignKey: 'playerGuildId',
+    targetKey: 'id'
+});
+
 async function initDatabase() {
     try {
         await sequelize.authenticate();
@@ -88,8 +101,14 @@ async function initDatabase() {
         await ensureUserSkillsColumns();
         await ensureProfilesColumns();
         await ensureFightProgressColumns();
+        await ensureRaidInstancesColumns();
+        await ensureAdventurerGuildConfigColumns();
+        await ensureMonstersColumns();
+        await ensureBotLogConfigColumns();
+        await ensurePlayerGuildColumns();
         await ensureSkillClassifications();
         await ensureRulerTitleBalance();
+        await ensureAchievementTitles();
         console.log('Database synced.');
     } catch (error) {
         console.error('Database initialization error:', error);
@@ -127,6 +146,14 @@ async function ensureSpawnChannelsColumns() {
     if (!tableDefinition.xpMultiplier) {
         await queryInterface.addColumn('SpawnChannels', 'xpMultiplier', {
             type: Sequelize.FLOAT,
+            allowNull: true,
+            defaultValue: null
+        });
+    }
+
+    if (!tableDefinition.terrainDamageType) {
+        await queryInterface.addColumn('SpawnChannels', 'terrainDamageType', {
+            type: Sequelize.STRING,
             allowNull: true,
             defaultValue: null
         });
@@ -213,6 +240,22 @@ async function ensureProfilesColumns() {
             defaultValue: {}
         });
     }
+
+    if (!tableDefinition.playerGuildId) {
+        await queryInterface.addColumn('Profiles', 'playerGuildId', {
+            type: Sequelize.INTEGER,
+            allowNull: true,
+            defaultValue: null
+        });
+    }
+
+    if (!tableDefinition.playerGuildJoinedAt) {
+        await queryInterface.addColumn('Profiles', 'playerGuildJoinedAt', {
+            type: Sequelize.DATE,
+            allowNull: true,
+            defaultValue: null
+        });
+    }
 }
 
 async function ensureFightProgressColumns() {
@@ -240,6 +283,146 @@ async function ensureFightProgressColumns() {
             type: Sequelize.JSON,
             allowNull: true,
             defaultValue: null
+        });
+    }
+}
+
+async function ensureRaidInstancesColumns() {
+    const queryInterface = sequelize.getQueryInterface();
+    const tableDefinition = await queryInterface.describeTable('RaidInstances');
+
+    if (!tableDefinition.phase) {
+        await queryInterface.addColumn('RaidInstances', 'phase', {
+            type: Sequelize.INTEGER,
+            allowNull: false,
+            defaultValue: 1
+        });
+    }
+
+    if (!tableDefinition.bossMechanicState) {
+        await queryInterface.addColumn('RaidInstances', 'bossMechanicState', {
+            type: Sequelize.JSON,
+            allowNull: false,
+            defaultValue: {}
+        });
+    }
+
+    if (!tableDefinition.raidLog) {
+        await queryInterface.addColumn('RaidInstances', 'raidLog', {
+            type: Sequelize.JSON,
+            allowNull: false,
+            defaultValue: []
+        });
+    }
+}
+
+async function ensureAdventurerGuildConfigColumns() {
+    const queryInterface = sequelize.getQueryInterface();
+    const tableDefinition = await queryInterface.describeTable('AdventurerGuildConfigs');
+
+    if (!tableDefinition.buybackState) {
+        await queryInterface.addColumn('AdventurerGuildConfigs', 'buybackState', {
+            type: Sequelize.JSON,
+            allowNull: false,
+            defaultValue: {}
+        });
+    }
+
+    if (!tableDefinition.questBoardState) {
+        await queryInterface.addColumn('AdventurerGuildConfigs', 'questBoardState', {
+            type: Sequelize.JSON,
+            allowNull: false,
+            defaultValue: {}
+        });
+    }
+
+    if (!tableDefinition.questBoardMix) {
+        await queryInterface.addColumn('AdventurerGuildConfigs', 'questBoardMix', {
+            type: Sequelize.JSON,
+            allowNull: false,
+            defaultValue: { generalCount: 2, specificCount: 3 }
+        });
+    }
+}
+
+async function ensureMonstersColumns() {
+    const queryInterface = sequelize.getQueryInterface();
+    const tableDefinition = await queryInterface.describeTable('Monsters');
+
+    if (!tableDefinition.monsterType) {
+        await queryInterface.addColumn('Monsters', 'monsterType', {
+            type: Sequelize.STRING,
+            allowNull: false,
+            defaultValue: 'monster'
+        });
+    }
+
+    await Monsters.update(
+        { monsterType: 'monster' },
+        { where: { monsterType: null } }
+    );
+}
+
+async function ensureBotLogConfigColumns() {
+    const queryInterface = sequelize.getQueryInterface();
+    const tableDefinition = await queryInterface.describeTable('BotLogConfigs');
+
+    if (!tableDefinition.adminLogChannelId) {
+        await queryInterface.addColumn('BotLogConfigs', 'adminLogChannelId', {
+            type: Sequelize.STRING,
+            allowNull: true,
+            defaultValue: null
+        });
+    }
+
+    if (!tableDefinition.adminWhitelistUserIds) {
+        await queryInterface.addColumn('BotLogConfigs', 'adminWhitelistUserIds', {
+            type: Sequelize.JSON,
+            allowNull: false,
+            defaultValue: []
+        });
+    }
+
+    if (!tableDefinition.adminSanctionState) {
+        await queryInterface.addColumn('BotLogConfigs', 'adminSanctionState', {
+            type: Sequelize.JSON,
+            allowNull: false,
+            defaultValue: { users: {} }
+        });
+    }
+
+    if (!tableDefinition.adminSecurityState) {
+        await queryInterface.addColumn('BotLogConfigs', 'adminSecurityState', {
+            type: Sequelize.JSON,
+            allowNull: false,
+            defaultValue: {
+                panicMode: false,
+                panicUpdatedAt: 0,
+                panicUpdatedBy: null,
+                panicReason: null
+            }
+        });
+    }
+}
+
+async function ensurePlayerGuildColumns() {
+    const queryInterface = sequelize.getQueryInterface();
+    const tableDefinition = await queryInterface.describeTable('PlayerGuilds').catch(() => null);
+    if (!tableDefinition) return;
+
+    if (!tableDefinition.officerProfileIds) {
+        await queryInterface.addColumn('PlayerGuilds', 'officerProfileIds', {
+            type: Sequelize.JSON,
+            allowNull: false,
+            defaultValue: []
+        });
+    }
+
+    if (!tableDefinition.missionState) {
+        await queryInterface.addColumn('PlayerGuilds', 'missionState', {
+            type: Sequelize.JSON,
+            allowNull: false,
+            defaultValue: {}
         });
     }
 }
@@ -279,6 +462,70 @@ async function ensureRulerTitleBalance() {
     }
 }
 
+async function ensureAchievementTitles() {
+    const renamePairs = [
+        ['Slayer', 'Monster Slayer'],
+        ['Slaughterer', 'Monster Slaughterer'],
+        ['Calamity', 'Monster Calamity']
+    ];
+
+    for (const [oldName, newName] of renamePairs) {
+        const oldTitle = await Titles.findOne({ where: { name: oldName } });
+        if (!oldTitle) continue;
+
+        const newTitle = await Titles.findOne({ where: { name: newName } });
+        if (newTitle) continue;
+
+        oldTitle.name = newName;
+        await oldTitle.save();
+    }
+
+    const requiredTitleNames = [
+        'Guardian',
+        'Saint',
+        'Savior',
+        'Medicine Alchemist',
+        'Monster Slayer',
+        'Monster Slaughterer',
+        'Monster Calamity',
+        'Human Slayer',
+        'Human Slaughterer',
+        'Human Calamity',
+        'Fairy Slayer',
+        'Fairy Slaughterer',
+        'Fairy Calamity',
+        'Demon Slayer',
+        'Demon Slaughterer',
+        'Demon Calamity',
+        'Wyrm Slayer',
+        'Wyrm Slaughterer',
+        'Wyrm Calamity',
+        'Dragon Slayer',
+        'Dragon Slaughterer',
+        'Dragon Calamity',
+        'Subjugated By The Hero'
+    ];
+
+    for (const name of requiredTitleNames) {
+        const existing = await Titles.findOne({ where: { name } });
+        if (existing) continue;
+
+        await Titles.create({
+            name,
+            description: `${name} (auto-unlock title)`,
+            hp: 0,
+            mp: 0,
+            stamina: 0,
+            vital_stamina: 0,
+            offense: 0,
+            defense: 0,
+            magic: 0,
+            resistance: 0,
+            speed: 0
+        });
+    }
+}
+
 initDatabase();
 
 module.exports = {
@@ -298,5 +545,8 @@ module.exports = {
     TutorialProgress,
     RaidInstances,
     InventoryItems,
-    BotLogConfig
+    BotLogConfig,
+    AdventurerGuildConfig,
+    AdminActionLog,
+    PlayerGuild
 };
