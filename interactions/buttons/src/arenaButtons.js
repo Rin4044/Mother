@@ -1,9 +1,18 @@
-const { Profiles, UserSkills, Skills, FightProgress, database, calculatePlayerStats, utils, playerStats, activeFights, clearFightTimeout, scheduleTurnTimeout, commands, global, arena, EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder, AttachmentBuilder, MessageFlags } = require('discord.js');
+const {
+    EmbedBuilder,
+    ActionRowBuilder,
+    StringSelectMenuBuilder,
+    AttachmentBuilder,
+    MessageFlags
+} = require('discord.js');
 const { Op } = require('sequelize');
-
 const path = require('path');
 const fs = require('fs');
+
+const { sequelize, Profiles, UserSkills, Skills, FightProgress } = require('../../../database');
+const { calculatePlayerStats } = require('../../../utils/playerStats');
 const { isAbyssAttack } = require('../../../utils/abyssSkill');
+const { activeFights, clearFightTimeout, scheduleTurnTimeout } = require('../../../commands/global/arena');
 
 const ALLOWED_COMBAT_TYPES = ['Physical', 'Magic', 'Debuff'];
 
@@ -24,34 +33,70 @@ const IMAGE_MAP = {
 };
 
 function resolveImage(profile) {
-    const race = profile.race?.toLowerCase().trim();
+    const race = String(profile?.race || '').toLowerCase().trim();
     const file = IMAGE_MAP[race];
     if (!file) return null;
 
     const imagePath = path.resolve('utils', 'images', file);
     if (!fs.existsSync(imagePath)) return null;
-
     return new AttachmentBuilder(imagePath, { name: file });
 }
 
 function buildStats(stats) {
     return [
-        `🟥 HP: ${stats.hp}/${stats.hp}`,
-        `🟦 MP: ${stats.mp}/${stats.mp}`,
+        `❤️ HP: ${stats.hp}/${stats.hp}`,
+        `🔵 MP: ${stats.mp}/${stats.mp}`,
         `🟨 Stamina: ${stats.stamina}/${stats.stamina}`,
         `🟩 Vital: ${stats.vitalStamina}/${stats.vitalStamina}`,
         '',
         `⚔️ Offense: ${stats.offense}`,
         `🛡️ Defense: ${stats.defense}`,
         `✨ Magic: ${stats.magic}`,
-        `🔰 Resistance: ${stats.resistance}`,
+        `🌀 Resistance: ${stats.resistance}`,
         `💨 Speed: ${stats.speed}`
     ].join('\n');
 }
 
-async function handleArena(interaction, client) {
+async function reserveBetPot(inviterId, opponentId, betAmount) {
+    if (betAmount <= 0) return { ok: true, pot: 0 };
 
-    const [action, opponentId, inviterId] = interaction.customId.split('_');
+    return sequelize.transaction(async (transaction) => {
+        const [inviter, opponent] = await Promise.all([
+            Profiles.findOne({ where: { userId: inviterId }, transaction, lock: transaction.LOCK.UPDATE }),
+            Profiles.findOne({ where: { userId: opponentId }, transaction, lock: transaction.LOCK.UPDATE })
+        ]);
+        if (!inviter || !opponent) return { ok: false, reason: 'NO_PROFILE' };
+
+        const inviterCrystals = Math.max(0, Number(inviter.crystals) || 0);
+        const opponentCrystals = Math.max(0, Number(opponent.crystals) || 0);
+        if (inviterCrystals < betAmount) return { ok: false, reason: 'INVITER_NOT_ENOUGH' };
+        if (opponentCrystals < betAmount) return { ok: false, reason: 'OPPONENT_NOT_ENOUGH' };
+
+        inviter.crystals = inviterCrystals - betAmount;
+        opponent.crystals = opponentCrystals - betAmount;
+        await inviter.save({ transaction });
+        await opponent.save({ transaction });
+        return { ok: true, pot: betAmount * 2 };
+    });
+}
+
+async function fetchEquippedCombatSkills(profileId) {
+    return UserSkills.findAll({
+        where: { profileId, equippedSlot: { [Op.not]: null } },
+        include: [{
+            model: Skills,
+            as: 'Skill',
+            where: { effect_type_main: { [Op.in]: ALLOWED_COMBAT_TYPES } }
+        }]
+    });
+}
+
+async function handleArena(interaction, client) {
+    const parts = String(interaction.customId || '').split('_');
+    const action = parts[0];
+    const opponentId = parts[1];
+    const inviterId = parts[2];
+    const customBetAmount = Math.max(0, Number(parts[3]) || 0);
 
     if (interaction.user.id !== opponentId) {
         return interaction.reply({
@@ -72,7 +117,6 @@ async function handleArena(interaction, client) {
         clearFightTimeout(pendingFight);
         activeFights.delete(inviterId);
         activeFights.delete(opponentId);
-
         return interaction.update({
             content: `${interaction.user.username} declined the challenge.`,
             embeds: [],
@@ -101,9 +145,7 @@ async function handleArena(interaction, client) {
 
     const inviterBusy = !!inviterProfile.combatState || (inviterTower && inviterTower.currentMonsterHp !== null);
     const opponentBusy = !!opponentProfile.combatState || (opponentTower && opponentTower.currentMonsterHp !== null);
-
     if (inviterBusy || opponentBusy) {
-        clearFightTimeout(pendingFight);
         activeFights.delete(inviterId);
         activeFights.delete(opponentId);
         return interaction.update({
@@ -118,8 +160,51 @@ async function handleArena(interaction, client) {
         client.users.fetch(opponentId)
     ]);
 
-    const inviterStats = await calculatePlayerStats(inviterProfile);
-    const opponentStats = await calculatePlayerStats(opponentProfile);
+    const [inviterStats, opponentStats, inviterSkills, opponentSkills] = await Promise.all([
+        calculatePlayerStats(inviterProfile),
+        calculatePlayerStats(opponentProfile),
+        fetchEquippedCombatSkills(inviterProfile.id),
+        fetchEquippedCombatSkills(opponentProfile.id)
+    ]);
+
+    if (!inviterSkills.length) {
+        activeFights.delete(inviterId);
+        activeFights.delete(opponentId);
+        return interaction.update({
+            content: `${inviterUser.username} has no equipped combat skills. Use /loadout equip first.`,
+            embeds: [],
+            components: [],
+            files: []
+        });
+    }
+    if (!opponentSkills.length) {
+        activeFights.delete(inviterId);
+        activeFights.delete(opponentId);
+        return interaction.update({
+            content: `${opponentUser.username} has no equipped combat skills. Arena canceled.`,
+            embeds: [],
+            components: [],
+            files: []
+        });
+    }
+
+    const betAmount = Math.max(0, Number(pendingFight.betAmount) || customBetAmount || 0);
+    const betReserve = await reserveBetPot(inviterId, opponentId, betAmount);
+    if (!betReserve.ok) {
+        activeFights.delete(inviterId);
+        activeFights.delete(opponentId);
+        const reason = betReserve.reason === 'INVITER_NOT_ENOUGH'
+            ? `${inviterUser.username} does not have enough crystals for the bet.`
+            : betReserve.reason === 'OPPONENT_NOT_ENOUGH'
+                ? `${opponentUser.username} does not have enough crystals for the bet.`
+                : 'Bet validation failed.';
+        return interaction.update({
+            content: `Arena canceled. ${reason}`,
+            embeds: [],
+            components: [],
+            files: []
+        });
+    }
 
     await inviterProfile.update({
         combatState: {
@@ -129,7 +214,6 @@ async function handleArena(interaction, client) {
             vitalStamina: inviterStats.vitalStamina
         }
     });
-
     await opponentProfile.update({
         combatState: {
             hp: opponentStats.hp,
@@ -144,41 +228,14 @@ async function handleArena(interaction, client) {
         playerB: opponentId,
         turn: inviterId,
         state: 'inCombat',
+        mode: String(pendingFight.mode || 'normal'),
+        betAmount,
+        betPot: Math.max(0, Number(betReserve.pot) || 0),
         messageId: interaction.message.id,
         channelId: interaction.channelId
     };
-
     activeFights.set(inviterId, fight);
     activeFights.set(opponentId, fight);
-
-    const inviterSkills = await UserSkills.findAll({
-        where: {
-            profileId: inviterProfile.id,
-            equippedSlot: { [Op.not]: null }
-        },
-        include: [{
-            model: Skills,
-            as: 'Skill',
-            where: {
-                effect_type_main: {
-                    [Op.in]: ALLOWED_COMBAT_TYPES
-                }
-            }
-        }]
-    });
-
-    if (!inviterSkills.length) {
-        clearFightTimeout(fight);
-        activeFights.delete(inviterId);
-        activeFights.delete(opponentId);
-        return interaction.update({
-            content: `${inviterUser.username} has no equipped combat skills. Use /loadout equip first.`,
-            embeds: [],
-            components: [],
-            files: []
-        });
-    }
-
     scheduleTurnTimeout(fight, client);
 
     const inviterImage = resolveImage(inviterProfile);
@@ -189,7 +246,14 @@ async function handleArena(interaction, client) {
         .setTitle(`Arena: ${inviterUser.username} vs ${opponentUser.username}`)
         .addFields(
             { name: inviterUser.username, value: buildStats(inviterStats), inline: true },
-            { name: opponentUser.username, value: buildStats(opponentStats), inline: true }
+            { name: opponentUser.username, value: buildStats(opponentStats), inline: true },
+            ...(betAmount > 0
+                ? [{
+                    name: 'Bet',
+                    value: `Each paid: ${betAmount} crystals\nWinner takes: ${fight.betPot} crystals`,
+                    inline: false
+                }]
+                : [])
         )
         .setFooter({ text: `It's ${inviterUser.username}'s turn.` });
 
@@ -200,7 +264,7 @@ async function handleArena(interaction, client) {
         .setCustomId('pvp_attack')
         .setPlaceholder('Select a skill')
         .addOptions(
-            inviterSkills.slice(0, 25).map(us => ({
+            inviterSkills.slice(0, 25).map((us) => ({
                 label: us.Skill.name,
                 value: us.Skill.id.toString(),
                 description: buildSkillOptionDescription(inviterStats, opponentStats, us.Skill, us.level)
@@ -208,7 +272,6 @@ async function handleArena(interaction, client) {
         );
 
     const row = new ActionRowBuilder().addComponents(select);
-
     return interaction.update({
         embeds: [embed],
         components: [row],
@@ -251,5 +314,5 @@ function buildSkillOptionDescription(attackerStats, defenderStats, skill, skillL
     if (mpCost > 0) parts.push(`MP ${mpCost}`);
     if (spCost > 0) parts.push(`SP ${spCost}`);
     const text = parts.join(' | ');
-    return text.length <= 100 ? text : text.slice(0, 97) + '...';
+    return text.length <= 100 ? text : `${text.slice(0, 97)}...`;
 }

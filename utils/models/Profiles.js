@@ -73,6 +73,24 @@ module.exports = (sequelize) => {
       defaultValue: null
     },
 
+    rankedRating: {
+      type: DataTypes.INTEGER,
+      allowNull: false,
+      defaultValue: 1000
+    },
+
+    rankedWins: {
+      type: DataTypes.INTEGER,
+      allowNull: false,
+      defaultValue: 0
+    },
+
+    rankedLosses: {
+      type: DataTypes.INTEGER,
+      allowNull: false,
+      defaultValue: 0
+    },
+
     baseHp: { type: DataTypes.INTEGER, defaultValue: 26 },
     baseMp: { type: DataTypes.INTEGER, defaultValue: 26 },
     baseStamina: { type: DataTypes.INTEGER, defaultValue: 26 },

@@ -233,6 +233,30 @@ async function ensureProfilesColumns() {
         });
     }
 
+    if (!tableDefinition.rankedRating) {
+        await queryInterface.addColumn('Profiles', 'rankedRating', {
+            type: Sequelize.INTEGER,
+            allowNull: false,
+            defaultValue: 1000
+        });
+    }
+
+    if (!tableDefinition.rankedWins) {
+        await queryInterface.addColumn('Profiles', 'rankedWins', {
+            type: Sequelize.INTEGER,
+            allowNull: false,
+            defaultValue: 0
+        });
+    }
+
+    if (!tableDefinition.rankedLosses) {
+        await queryInterface.addColumn('Profiles', 'rankedLosses', {
+            type: Sequelize.INTEGER,
+            allowNull: false,
+            defaultValue: 0
+        });
+    }
+
     if (!tableDefinition.rulerProgress) {
         await queryInterface.addColumn('Profiles', 'rulerProgress', {
             type: Sequelize.JSON,
@@ -400,6 +424,24 @@ async function ensureBotLogConfigColumns() {
                 panicUpdatedAt: 0,
                 panicUpdatedBy: null,
                 panicReason: null
+            }
+        });
+    }
+
+    if (!tableDefinition.rankedSeasonState) {
+        await queryInterface.addColumn('BotLogConfigs', 'rankedSeasonState', {
+            type: Sequelize.JSON,
+            allowNull: false,
+            defaultValue: {
+                seasonNumber: 0,
+                seasonName: 'Alpha and Beta',
+                status: 'preseason',
+                infinite: true,
+                startsAt: 0,
+                endsAt: 0,
+                updatedAt: 0,
+                updatedBy: null,
+                note: 'Season 0 (preseason).'
             }
         });
     }

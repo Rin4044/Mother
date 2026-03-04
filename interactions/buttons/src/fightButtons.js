@@ -1,4 +1,4 @@
-const { EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder, AttachmentBuilder, MessageFlags } = require('discord.js');
+const { EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder, MessageFlags } = require('discord.js');
 
 const {
     Profiles,
@@ -9,12 +9,11 @@ const {
 } = require('../../../database.js');
 
 const { Op } = require('sequelize');
-const path = require('path');
-const fs = require('fs');
 
 const { calculateScaling } = require('../../../utils/combatEngine');
 const { calculatePlayerStats } = require('../../../utils/playerStats');
 const { resolveImage } = require('../../../utils/resolveProfileImage');
+const { resolveMonsterImage } = require('../../../utils/resolveMonsterImage');
 const { processRulerProgress } = require('../../../utils/rulerTitleService');
 const { getInventoryQuantity } = require('../../../utils/inventoryService');
 const { isAbyssAttack } = require('../../../utils/abyssSkill');
@@ -260,15 +259,6 @@ function buildDetailedStats(
         `🧿 Resistance: ${monsterMax.resistance}\n` +
         `💨 Speed: ${monsterMax.speed}`
     );
-}
-
-function resolveMonsterImage(monster) {
-    if (!monster?.image) return null;
-
-    const imagePath = path.resolve('utils', 'images', monster.image);
-    if (!fs.existsSync(imagePath)) return null;
-
-    return new AttachmentBuilder(imagePath, { name: monster.image });
 }
 
 function estimateSkillDamage(attackerStats, defenderStats, skill, skillLevel = 1) {

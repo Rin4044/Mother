@@ -24,6 +24,11 @@ const {
 const { resolveAllowedInventoryItemName, getAllowedInventoryItems } = require('../../utils/allowedInventoryItems');
 const { getAdminSecurityState, setPanicMode } = require('../../utils/adminSecurityService');
 const { getSkillLevelCap } = require('../../utils/skillProgression');
+const {
+    getRankedSeasonState,
+    updateRankedSeasonState,
+    statusLabel: rankedStatusLabel
+} = require('../../utils/rankedSeasonService');
 
 const LIMITS = {
     currencyDeltaMax: 500000,
@@ -146,6 +151,52 @@ function formatDurationCompact(ms) {
     const m = Math.floor((sec % 3600) / 60);
     if (h > 0) return `${h}h ${m}m`;
     return `${m}m`;
+}
+
+function buildRankedSeasonEmbed(state) {
+    const seasonNumber = Math.max(0, Number(state?.seasonNumber) || 0);
+    const seasonName = String(state?.seasonName || (seasonNumber === 0 ? 'Alpha and Beta' : `Season ${seasonNumber}`));
+    const status = rankedStatusLabel(String(state?.status || 'preseason'));
+    const infinite = Boolean(state?.infinite);
+    const startsAt = Math.max(0, Number(state?.startsAt) || 0);
+    const endsAt = Math.max(0, Number(state?.endsAt) || 0);
+    const updatedAt = Math.max(0, Number(state?.updatedAt) || 0);
+    const updatedBy = state?.updatedBy ? String(state.updatedBy) : null;
+    const note = state?.note ? String(state.note) : 'none';
+
+    const startLine = startsAt > 0 ? `<t:${Math.floor(startsAt / 1000)}:F>` : 'n/a';
+    const endLine = infinite
+        ? 'Infinite (no end)'
+        : (endsAt > 0 ? `<t:${Math.floor(endsAt / 1000)}:F> (<t:${Math.floor(endsAt / 1000)}:R>)` : 'n/a');
+    const updatedLine = updatedAt > 0 ? `<t:${Math.floor(updatedAt / 1000)}:F>` : 'n/a';
+
+    return new EmbedBuilder()
+        .setColor(0x6f42c1)
+        .setTitle('Ranked Season Control')
+        .setDescription(
+            `Season: **${seasonNumber} - ${seasonName}**\n` +
+            `Status: **${status}**\n` +
+            `Mode: **${infinite ? 'Infinite' : 'Timed'}**`
+        )
+        .addFields(
+            { name: 'Start', value: startLine, inline: true },
+            { name: 'End', value: endLine, inline: true },
+            { name: 'Updated', value: `${updatedLine}\nBy: ${updatedBy ? `<@${updatedBy}>` : 'n/a'}`, inline: false },
+            { name: 'Note', value: note.slice(0, 1024), inline: false }
+        )
+        .setTimestamp(new Date());
+}
+
+function buildRankedSeasonComponents(state) {
+    const infinite = Boolean(state?.infinite);
+    return [
+        new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+                .setCustomId('admin_ranked_toggle_infinite')
+                .setLabel(infinite ? 'Set Timed Mode' : 'Set Infinite Mode')
+                .setStyle(infinite ? ButtonStyle.Secondary : ButtonStyle.Primary)
+        )
+    ];
 }
 
 async function buildAdminStatusEmbed(guildId) {
@@ -755,6 +806,116 @@ module.exports = {
                         .setName('status')
                         .setDescription('Show panic mode state.')
                 )
+        )
+        .addSubcommandGroup((group) =>
+            group
+                .setName('ranked')
+                .setDescription('Owner-only ranked season controls.')
+                .addSubcommand((sub) =>
+                    sub
+                        .setName('status')
+                        .setDescription('Show ranked season state and toggle infinite mode.')
+                )
+                .addSubcommand((sub) =>
+                    sub
+                        .setName('start')
+                        .setDescription('Start the next ranked season.')
+                        .addStringOption((o) =>
+                            o
+                                .setName('name')
+                                .setDescription('Season name')
+                                .setRequired(true)
+                                .setMaxLength(80)
+                        )
+                        .addStringOption((o) =>
+                            o
+                                .setName('reason')
+                                .setDescription('Why this season start is needed')
+                                .setRequired(true)
+                                .setMaxLength(240)
+                        )
+                        .addIntegerOption((o) =>
+                            o
+                                .setName('duration_days')
+                                .setDescription('Optional season duration in days (ignored in infinite mode)')
+                                .setRequired(false)
+                                .setMinValue(1)
+                                .setMaxValue(365)
+                        )
+                )
+                .addSubcommand((sub) =>
+                    sub
+                        .setName('set_name')
+                        .setDescription('Set the current season name.')
+                        .addStringOption((o) =>
+                            o
+                                .setName('name')
+                                .setDescription('Season display name')
+                                .setRequired(true)
+                                .setMaxLength(80)
+                        )
+                        .addStringOption((o) =>
+                            o
+                                .setName('reason')
+                                .setDescription('Why this season name change is needed')
+                                .setRequired(true)
+                                .setMaxLength(240)
+                        )
+                )
+                .addSubcommand((sub) =>
+                    sub
+                        .setName('end')
+                        .setDescription('End the current ranked season.')
+                        .addStringOption((o) =>
+                            o
+                                .setName('reason')
+                                .setDescription('Why this season end is needed')
+                                .setRequired(true)
+                                .setMaxLength(240)
+                        )
+                )
+                .addSubcommand((sub) =>
+                    sub
+                        .setName('set_number')
+                        .setDescription('Set the current season number.')
+                        .addIntegerOption((o) =>
+                            o
+                                .setName('season')
+                                .setDescription('Season number (0+). Use 0 for preseason.')
+                                .setRequired(true)
+                                .setMinValue(0)
+                                .setMaxValue(9999)
+                        )
+                        .addStringOption((o) =>
+                            o
+                                .setName('reason')
+                                .setDescription('Why this season number change is needed')
+                                .setRequired(true)
+                                .setMaxLength(240)
+                        )
+                )
+                .addSubcommand((sub) =>
+                    sub
+                        .setName('set_infinite')
+                        .setDescription('Set season mode to infinite or timed.')
+                        .addStringOption((o) =>
+                            o
+                                .setName('mode')
+                                .setDescription('Ranked season mode')
+                                .setRequired(true)
+                                .addChoices(
+                                    { name: 'Infinite', value: 'infinite' },
+                                    { name: 'Timed', value: 'timed' }
+                                )
+                        )
+                        .addStringOption((o) =>
+                            o
+                                .setName('reason')
+                                .setDescription('Why this mode change is needed')
+                                .setRequired(true)
+                                .setMaxLength(240)
+                        )
+                )
         ),
 
     async execute(interaction) {
@@ -951,6 +1112,196 @@ module.exports = {
             }
         }
 
+        if (group === 'ranked') {
+            const canOwnerUse = await assertOwnerOnly(interaction, {
+                logDenied: true,
+                commandName: 'admin',
+                actionGroup: 'ranked',
+                actionName: action
+            });
+            if (!canOwnerUse) return;
+
+            if (action === 'status') {
+                const state = await getRankedSeasonState(interaction.guildId);
+                return interaction.reply({
+                    embeds: [buildRankedSeasonEmbed(state)],
+                    components: buildRankedSeasonComponents(state),
+                    flags: MessageFlags.Ephemeral
+                });
+            }
+
+            if (action === 'set_infinite') {
+                const mode = String(interaction.options.getString('mode', true) || '').toLowerCase();
+                const reason = String(interaction.options.getString('reason', true) || '').trim();
+                const infinite = mode === 'infinite';
+                const next = await updateRankedSeasonState(interaction.guildId, (current) => ({
+                    ...current,
+                    infinite,
+                    endsAt: infinite ? 0 : current.endsAt,
+                    updatedAt: Date.now(),
+                    updatedBy: interaction.user.id,
+                    note: reason
+                }));
+
+                await recordAdminAction(interaction, {
+                    commandName: 'admin',
+                    actionGroup: 'ranked',
+                    actionName: 'set_infinite',
+                    reason,
+                    changes: `Season mode: ${infinite ? 'Infinite' : 'Timed'}.`,
+                    metadata: {
+                        before: { infinite: !infinite },
+                        after: { infinite }
+                    }
+                });
+
+                return interaction.reply({
+                    content: `Ranked season mode set to **${infinite ? 'Infinite' : 'Timed'}**.`,
+                    embeds: [buildRankedSeasonEmbed(next)],
+                    components: buildRankedSeasonComponents(next),
+                    flags: MessageFlags.Ephemeral
+                });
+            }
+
+            if (action === 'set_number') {
+                const season = clampInt(interaction.options.getInteger('season', true), 0, 9999);
+                const reason = String(interaction.options.getString('reason', true) || '').trim();
+                const next = await updateRankedSeasonState(interaction.guildId, (current) => ({
+                    ...current,
+                    seasonNumber: season,
+                    seasonName: season === 0
+                        ? 'Alpha and Beta'
+                        : (String(current.seasonName || '').trim() === 'Alpha and Beta'
+                            ? `Season ${season}`
+                            : current.seasonName),
+                    updatedAt: Date.now(),
+                    updatedBy: interaction.user.id,
+                    note: reason
+                }));
+
+                await recordAdminAction(interaction, {
+                    commandName: 'admin',
+                    actionGroup: 'ranked',
+                    actionName: 'set_number',
+                    reason,
+                    changes: `Season number: ${season}.`,
+                    metadata: { after: { seasonNumber: season } }
+                });
+
+                return interaction.reply({
+                    content: `Season number set to **${season}**.`,
+                    embeds: [buildRankedSeasonEmbed(next)],
+                    components: buildRankedSeasonComponents(next),
+                    flags: MessageFlags.Ephemeral
+                });
+            }
+
+            if (action === 'set_name') {
+                const seasonName = String(interaction.options.getString('name', true) || '').trim().slice(0, 80);
+                const reason = String(interaction.options.getString('reason', true) || '').trim();
+                if (!seasonName) {
+                    return interaction.reply({ content: 'Season name cannot be empty.', flags: MessageFlags.Ephemeral });
+                }
+
+                const next = await updateRankedSeasonState(interaction.guildId, (current) => ({
+                    ...current,
+                    seasonName,
+                    updatedAt: Date.now(),
+                    updatedBy: interaction.user.id,
+                    note: reason
+                }));
+
+                await recordAdminAction(interaction, {
+                    commandName: 'admin',
+                    actionGroup: 'ranked',
+                    actionName: 'set_name',
+                    reason,
+                    changes: `Season name set to "${seasonName}".`,
+                    metadata: { after: { seasonName } }
+                });
+
+                return interaction.reply({
+                    content: `Season name set to **${seasonName}**.`,
+                    embeds: [buildRankedSeasonEmbed(next)],
+                    components: buildRankedSeasonComponents(next),
+                    flags: MessageFlags.Ephemeral
+                });
+            }
+
+            if (action === 'start') {
+                const seasonName = String(interaction.options.getString('name', true) || '').trim().slice(0, 80);
+                const reason = String(interaction.options.getString('reason', true) || '').trim();
+                if (!seasonName) {
+                    return interaction.reply({ content: 'Season name cannot be empty.', flags: MessageFlags.Ephemeral });
+                }
+                const durationDays = clampInt(interaction.options.getInteger('duration_days', false) || 0, 0, 365);
+                const now = Date.now();
+                const next = await updateRankedSeasonState(interaction.guildId, (current) => {
+                    const newSeason = Math.max(0, Number(current.seasonNumber) || 0) + 1;
+                    const isInfinite = Boolean(current.infinite);
+                    const endsAt = isInfinite
+                        ? 0
+                        : (durationDays > 0 ? now + (durationDays * 24 * 60 * 60 * 1000) : current.endsAt);
+                    return {
+                        ...current,
+                        seasonNumber: newSeason,
+                        seasonName,
+                        status: 'active',
+                        startsAt: now,
+                        endsAt: isInfinite ? 0 : Math.max(0, Number(endsAt) || 0),
+                        updatedAt: now,
+                        updatedBy: interaction.user.id,
+                        note: reason
+                    };
+                });
+
+                await recordAdminAction(interaction, {
+                    commandName: 'admin',
+                    actionGroup: 'ranked',
+                    actionName: 'start',
+                    reason,
+                    changes: `Started season ${next.seasonNumber} (${next.seasonName}). Mode: ${next.infinite ? 'Infinite' : 'Timed'}.`,
+                    metadata: { after: next }
+                });
+
+                return interaction.reply({
+                    content: `Started ranked season **${next.seasonNumber} - ${next.seasonName}**.`,
+                    embeds: [buildRankedSeasonEmbed(next)],
+                    components: buildRankedSeasonComponents(next),
+                    flags: MessageFlags.Ephemeral
+                });
+            }
+
+            if (action === 'end') {
+                const reason = String(interaction.options.getString('reason', true) || '').trim();
+                const now = Date.now();
+                const next = await updateRankedSeasonState(interaction.guildId, (current) => ({
+                    ...current,
+                    status: 'ended',
+                    endsAt: now,
+                    updatedAt: now,
+                    updatedBy: interaction.user.id,
+                    note: reason
+                }));
+
+                await recordAdminAction(interaction, {
+                    commandName: 'admin',
+                    actionGroup: 'ranked',
+                    actionName: 'end',
+                    reason,
+                    changes: `Ended season ${next.seasonNumber}.`,
+                    metadata: { after: next }
+                });
+
+                return interaction.reply({
+                    content: `Ended ranked season **${next.seasonNumber}**.`,
+                    embeds: [buildRankedSeasonEmbed(next)],
+                    components: buildRankedSeasonComponents(next),
+                    flags: MessageFlags.Ephemeral
+                });
+            }
+        }
+
         if (!interaction.memberPermissions?.has(PermissionFlagsBits.Administrator)) {
             return interaction.reply({
                 content: 'Administrator permission required.',
@@ -1001,6 +1352,56 @@ module.exports = {
 
     async handleAdminActionButton(interaction) {
         const id = String(interaction.customId || '');
+
+        if (id === 'admin_ranked_toggle_infinite') {
+            const canOwnerUse = await assertOwnerOnly(interaction, {
+                logDenied: true,
+                commandName: 'admin',
+                actionGroup: 'ranked',
+                actionName: 'toggle_infinite_button'
+            });
+            if (!canOwnerUse) return true;
+
+            if (!interaction.deferred && !interaction.replied) {
+                try {
+                    await interaction.deferUpdate();
+                } catch (error) {
+                    if (error?.code !== DISCORD_UNKNOWN_INTERACTION && error?.code !== DISCORD_ALREADY_ACK) {
+                        console.error('admin ranked toggle deferUpdate error:', error?.message || error);
+                    }
+                }
+            }
+
+            const current = await getRankedSeasonState(interaction.guildId);
+            const nextInfinite = !Boolean(current.infinite);
+            const next = await updateRankedSeasonState(interaction.guildId, (prev) => ({
+                ...prev,
+                infinite: nextInfinite,
+                endsAt: nextInfinite ? 0 : prev.endsAt,
+                updatedAt: Date.now(),
+                updatedBy: interaction.user.id,
+                note: `Quick toggle via button by ${interaction.user.tag}`
+            }));
+
+            await recordAdminAction(interaction, {
+                commandName: 'admin',
+                actionGroup: 'ranked',
+                actionName: 'toggle_infinite_button',
+                reason: 'Owner toggled ranked season infinite mode via button.',
+                changes: `Season mode: ${nextInfinite ? 'Infinite' : 'Timed'}.`,
+                metadata: {
+                    before: { infinite: current.infinite },
+                    after: { infinite: nextInfinite },
+                    sanctionExempt: true
+                }
+            });
+
+            await safeComponentUpdate(interaction, {
+                embeds: [buildRankedSeasonEmbed(next)],
+                components: buildRankedSeasonComponents(next)
+            });
+            return true;
+        }
 
         const isConfirm = id.startsWith('admin_confirm_');
         const isCancel = id.startsWith('admin_cancel_');

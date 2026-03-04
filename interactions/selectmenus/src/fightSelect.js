@@ -1,6 +1,4 @@
-const { EmbedBuilder, AttachmentBuilder, MessageFlags } = require('discord.js');
-const path = require('path');
-const fs = require('fs');
+const { EmbedBuilder, MessageFlags } = require('discord.js');
 const { Op } = require('sequelize');
 
 const { calculateScaling, executeTurn } = require('../../../utils/combatEngine');
@@ -11,6 +9,7 @@ const { addInventoryItem, consumeInventoryItem, getInventoryQuantity } = require
 const { applyXpBoost } = require('../../../utils/xpBoostService');
 const { formatCoreItemLabel } = require('../../../utils/coreEmoji');
 const { resolveImage } = require('../../../utils/resolveProfileImage');
+const { resolveMonsterImage } = require('../../../utils/resolveMonsterImage');
 const { processRulerProgress, countStatusTicks } = require('../../../utils/rulerTitleService');
 const { getMaxLevelForRace } = require('../../../utils/evolutionConfig');
 const passiveSkillAcquisitionService = require('../../../utils/passiveSkillAcquisitionService');
@@ -39,6 +38,27 @@ const {
     grantSkillXp,
     calculatePveSkillXp
 } = require('../../../utils/skillProgression');
+
+const MONSTER_SKILLS_CACHE_TTL_MS = 60 * 1000;
+const monsterSkillsCache = new Map();
+
+async function getCachedMonsterSkills(monsterId) {
+    const id = Number(monsterId);
+    if (!Number.isFinite(id) || id <= 0) return [];
+
+    const now = Date.now();
+    const cached = monsterSkillsCache.get(id);
+    if (cached && (now - cached.at) <= MONSTER_SKILLS_CACHE_TTL_MS) {
+        return Array.isArray(cached.skills) ? cached.skills : [];
+    }
+
+    const monsterWithSkills = await Monsters.findByPk(id, {
+        include: [{ model: Skills, through: { attributes: [] } }]
+    });
+    const skills = monsterWithSkills?.Skills || [];
+    monsterSkillsCache.set(id, { at: now, skills });
+    return skills;
+}
 
 async function handleFightAttack(interaction) {
 
@@ -190,11 +210,7 @@ async function handleFightAttack(interaction) {
             }
         }
 
-        const monsterData = await Monsters.findByPk(monster.id, {
-            include: [{ model: Skills, through: { attributes: [] } }]
-        });
-
-        const monsterSkills = monsterData?.Skills || [];
+        const monsterSkills = await getCachedMonsterSkills(monster.id);
         const monsterStatusModifiers = buildStatusModifiersFromSkillsUtil(monsterSkills);
         state.entityA.statusResistance = playerStatusModifiers.statusResistance;
         state.entityA.statusEnhancement = playerStatusModifiers.statusEnhancement;
@@ -525,7 +541,8 @@ async function handleFightAttack(interaction) {
         const components = await buildFightActionComponents({
             profileId: profile.id,
             attackerStats: playerStats,
-            defenderStats: state.entityB
+            defenderStats: state.entityB,
+            userSkills: allPlayerSkills
         });
 
         return interaction.editReply({
@@ -609,11 +626,7 @@ async function handleFightAttack(interaction) {
         }
     }
 
-    const monsterWithSkills = await Monsters.findByPk(monster.id, {
-        include: [{ model: Skills, through: { attributes: [] } }]
-    });
-
-    const monsterSkills = monsterWithSkills?.Skills || [];
+    const monsterSkills = await getCachedMonsterSkills(monster.id);
     const monsterStatusModifiers = buildStatusModifiersFromSkillsUtil(monsterSkills);
     state.entityA.statusResistance = playerStatusModifiers.statusResistance;
     state.entityA.statusEnhancement = playerStatusModifiers.statusEnhancement;
@@ -734,7 +747,11 @@ async function handleFightAttack(interaction) {
         });
     }
 
-    return updateFightEmbed(interaction, profile, monster, monsterMax, state, result, sessionSkillXpSummary);
+    return updateFightEmbed(interaction, profile, monster, monsterMax, state, result, sessionSkillXpSummary, {
+        progress,
+        maxPlayer: playerMax,
+        userSkills: allPlayerSkills
+    });
 }
 
 module.exports = { handleFightAttack };
@@ -827,12 +844,12 @@ function buildFullStatsEmbed(username, state, maxPlayer, monster, monsterMaxStat
     );
 }
 
-async function updateFightEmbed(interaction, profile, monster, monsterMaxStats, state, result, skillXpSummary) {
+async function updateFightEmbed(interaction, profile, monster, monsterMaxStats, state, result, skillXpSummary, options = {}) {
 
-    const progress = await FightProgress.findOne({ where: { profileId: profile.id } });
+    const progress = options.progress || await FightProgress.findOne({ where: { profileId: profile.id } });
     if (!progress) return;
 
-    const maxPlayer = await calculatePlayerStats(profile);
+    const maxPlayer = options.maxPlayer || await calculatePlayerStats(profile);
     if (!maxPlayer) return;
 
     await Promise.all([
@@ -876,7 +893,8 @@ async function updateFightEmbed(interaction, profile, monster, monsterMaxStats, 
     const components = await buildFightActionComponents({
         profileId: profile.id,
         attackerStats: maxPlayer,
-        defenderStats: state.entityB
+        defenderStats: state.entityB,
+        userSkills: options.userSkills
     });
 
     return interaction.editReply({
@@ -1379,25 +1397,33 @@ function estimateMenuSkillDamage(attackerStats, defenderStats, skill, skillLevel
     return Math.max(0, Math.floor(reducedDamage));
 }
 
-async function buildFightActionComponents({ profileId, attackerStats, defenderStats }) {
-    const userSkills = await UserSkills.findAll({
-        where: {
-            profileId,
-            equippedSlot: { [Op.not]: null }
-        },
-        include: [{
-            model: Skills,
-            required: true,
+async function buildFightActionComponents({ profileId, attackerStats, defenderStats, userSkills = null }) {
+    let resolvedSkills = Array.isArray(userSkills) ? userSkills : null;
+    if (!resolvedSkills) {
+        resolvedSkills = await UserSkills.findAll({
             where: {
-                effect_type_main: {
-                    [Op.in]: ['Physical', 'Magic', 'Debuff', 'Buff']
+                profileId,
+                equippedSlot: { [Op.not]: null }
+            },
+            include: [{
+                model: Skills,
+                required: true,
+                where: {
+                    effect_type_main: {
+                        [Op.in]: ['Physical', 'Magic', 'Debuff', 'Buff']
+                    }
                 }
-            }
-        }],
-        order: [['equippedSlot', 'ASC']]
-    });
+            }],
+            order: [['equippedSlot', 'ASC']]
+        });
+    }
 
-    const options = userSkills.slice(0, 25).map((us) => ({
+    const combatUserSkills = (resolvedSkills || [])
+        .filter((us) => us?.equippedSlot !== null && us?.equippedSlot !== undefined)
+        .filter((us) => ['Physical', 'Magic', 'Debuff', 'Buff'].includes(String(us?.Skill?.effect_type_main || '')))
+        .sort((a, b) => Number(a?.equippedSlot || 0) - Number(b?.equippedSlot || 0));
+
+    const options = combatUserSkills.slice(0, 25).map((us) => ({
         label: us.Skill.name,
         value: String(us.Skill.id),
         description: buildSkillSelectDescription(
@@ -1844,20 +1870,5 @@ async function profileHasTitle(profileId, titleName) {
 
     return !!userTitle;
 }
-
-function resolveMonsterImage(monster) {
-    if (!monster?.image) return null;
-
-    const imagePath = path.resolve('utils', 'images', monster.image);
-    if (!fs.existsSync(imagePath)) return null;
-
-    return new AttachmentBuilder(imagePath, { name: monster.image });
-}
-
-
-
-
-
-
 
 

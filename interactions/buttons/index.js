@@ -123,7 +123,7 @@ async function routeButton(interaction, client) {
     // ==============================
     // ADMIN CONFIRM/CANCEL BUTTONS
     // ==============================
-    if (id.startsWith('admin_confirm_') || id.startsWith('admin_cancel_')) {
+    if (id.startsWith('admin_confirm_') || id.startsWith('admin_cancel_') || id === 'admin_ranked_toggle_infinite') {
         return adminCommand.handleAdminActionButton(interaction);
     }
 

@@ -46,6 +46,21 @@ module.exports = (sequelize) => {
                 panicUpdatedBy: null,
                 panicReason: null
             }
+        },
+        rankedSeasonState: {
+            type: DataTypes.JSON,
+            allowNull: false,
+            defaultValue: {
+                seasonNumber: 0,
+                seasonName: 'Alpha and Beta',
+                status: 'preseason',
+                infinite: true,
+                startsAt: 0,
+                endsAt: 0,
+                updatedAt: 0,
+                updatedBy: null,
+                note: 'Season 0 (preseason).'
+            }
         }
     }, {
         timestamps: true

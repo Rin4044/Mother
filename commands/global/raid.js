@@ -1,9 +1,8 @@
-const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder, AttachmentBuilder, ButtonBuilder, ButtonStyle, MessageFlags } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle, MessageFlags } = require('discord.js');
 const { Op } = require('sequelize');
-const path = require('path');
-const fs = require('fs');
 const { sequelize, RaidInstances, Monsters, Skills, Profiles, UserSkills, InventoryItems } = require('../../database');
 const { calculatePlayerStats } = require('../../utils/playerStats');
+const { resolveMonsterImage } = require('../../utils/resolveMonsterImage');
 const { executeTurn } = require('../../utils/combatEngine');
 const { calculateEffectiveSkillPower } = require('../../utils/skillProgression');
 const { calculateXpForLevel } = require('../../utils/xpUtils');
@@ -971,13 +970,6 @@ function scheduleActiveTimeout(client, raidId, seconds) {
         }
     }, Math.max(1000, seconds * 1000));
     activeTimers.set(raidId, timer);
-}
-
-function resolveMonsterImage(imageName) {
-    if (!imageName) return null;
-    const filePath = path.resolve('utils', 'images', imageName);
-    if (!fs.existsSync(filePath)) return null;
-    return new AttachmentBuilder(filePath, { name: imageName });
 }
 
 function estimateRaidSkillDamage(playerStats, bossState, skill, skillLevel) {

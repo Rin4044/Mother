@@ -1,4 +1,22 @@
-const { Profiles, Skills, UserSkills, database, activeFights, clearFightTimeout, scheduleTurnTimeout, commands, global, arena, calculatePlayerStats, utils, playerStats, startCombat, combatEngine, resolveImage, resolveProfileImage, calculateEffectiveSkillPower, grantSkillXp, skillProgression, Op, sequelize, EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder, MessageFlags } = require('discord.js');
+const {
+    EmbedBuilder,
+    ActionRowBuilder,
+    StringSelectMenuBuilder,
+    MessageFlags
+} = require('discord.js');
+const { Op } = require('sequelize');
+
+const { sequelize, Profiles, Skills, UserSkills } = require('../../../database');
+const {
+    activeFights,
+    clearFightTimeout,
+    scheduleTurnTimeout,
+    applyRankedMatchResult
+} = require('../../../commands/global/arena');
+const { calculatePlayerStats } = require('../../../utils/playerStats');
+const { startCombat } = require('../../../utils/combatEngine');
+const { resolveImage } = require('../../../utils/resolveProfileImage');
+const { calculateEffectiveSkillPower, grantSkillXp } = require('../../../utils/skillProgression');
 const { isAbyssAttack } = require('../../../utils/abyssSkill');
 
 const ALLOWED_COMBAT_TYPES = ['Physical', 'Magic', 'Debuff'];
@@ -11,15 +29,15 @@ function buildStats(combat, maxStats) {
     const vitalStamina = Math.max(0, combat.vitalStamina ?? 0);
 
     return [
-        `🟥 HP: ${hp}/${maxStats.hp}${shield > 0 ? ` | 🛡 ${shield}` : ''}`,
-        `🟦 MP: ${mp}/${maxStats.mp}`,
+        `❤️ HP: ${hp}/${maxStats.hp}${shield > 0 ? ` | 🛡 ${shield}` : ''}`,
+        `🔵 MP: ${mp}/${maxStats.mp}`,
         `🟨 Stamina: ${stamina}/${maxStats.stamina}`,
         `🟩 Vital: ${vitalStamina}/${maxStats.vitalStamina}`,
         '',
         `⚔️ Offense: ${maxStats.offense}`,
         `🛡️ Defense: ${maxStats.defense}`,
         `✨ Magic: ${maxStats.magic}`,
-        `🔰 Resistance: ${maxStats.resistance}`,
+        `🌀 Resistance: ${maxStats.resistance}`,
         `💨 Speed: ${maxStats.speed}`
     ].join('\n');
 }
@@ -34,7 +52,9 @@ function buildArenaEmbed({
     attackerName,
     skillName,
     totalDamage,
-    footerText
+    footerText,
+    betPot = 0,
+    betNote = ''
 }) {
     return new EmbedBuilder()
         .setColor('#290003')
@@ -44,11 +64,34 @@ function buildArenaEmbed({
             { name: opponentUser.username, value: buildStats(opponentCombat, opponentMax), inline: true },
             {
                 name: 'Attack Result',
-                value: `${attackerName} used **${skillName}** and dealt **${totalDamage}** damage.`,
+                value: `${attackerName} used **${skillName}** and dealt **${totalDamage}** damage.` +
+                    (betNote ? `\n${betNote}` : ''),
                 inline: false
-            }
+            },
+            ...(betPot > 0 ? [{
+                name: 'Bet Pot',
+                value: `${betPot} crystals`,
+                inline: false
+            }] : [])
         )
         .setFooter({ text: footerText });
+}
+
+async function awardBetPotToWinner(fight, winnerUserId) {
+    const pot = Math.max(0, Number(fight?.betPot) || 0);
+    if (!winnerUserId || pot <= 0) return { awarded: false, pot: 0 };
+
+    return sequelize.transaction(async (transaction) => {
+        const winner = await Profiles.findOne({
+            where: { userId: String(winnerUserId) },
+            transaction,
+            lock: transaction.LOCK.UPDATE
+        });
+        if (!winner) return { awarded: false, pot: 0 };
+        winner.crystals = Math.max(0, Number(winner.crystals) || 0) + pot;
+        await winner.save({ transaction });
+        return { awarded: true, pot };
+    });
 }
 
 async function handleSkillSelection(interaction, client) {
@@ -71,7 +114,6 @@ async function handleSkillSelection(interaction, client) {
 
     const attackerId = fight.turn;
     const defenderId = attackerId === fight.playerA ? fight.playerB : fight.playerA;
-
     const skillId = parseInt(values[0], 10);
     if (isNaN(skillId)) {
         return interaction.reply({ content: 'Invalid skill.', flags: MessageFlags.Ephemeral });
@@ -82,11 +124,9 @@ async function handleSkillSelection(interaction, client) {
         Profiles.findOne({ where: { userId: defenderId } }),
         Skills.findByPk(skillId)
     ]);
-
     if (!attackerProfile || !defenderProfile || !skill) {
         return interaction.reply({ content: 'Invalid combat state.', flags: MessageFlags.Ephemeral });
     }
-
     if (!ALLOWED_COMBAT_TYPES.includes(skill.effect_type_main)) {
         return interaction.reply({
             content: 'This skill cannot be used in arena combat.',
@@ -95,13 +135,8 @@ async function handleSkillSelection(interaction, client) {
     }
 
     const attackerUserSkill = await UserSkills.findOne({
-        where: {
-            profileId: attackerProfile.id,
-            skillId: skill.id,
-            equippedSlot: { [Op.not]: null }
-        }
+        where: { profileId: attackerProfile.id, skillId: skill.id, equippedSlot: { [Op.not]: null } }
     });
-
     if (!attackerUserSkill) {
         return interaction.reply({
             content: 'This skill is not equipped. Use /loadout equip first.',
@@ -116,7 +151,6 @@ async function handleSkillSelection(interaction, client) {
 
     const attackerStats = await calculatePlayerStats(attackerProfile);
     const defenderStats = await calculatePlayerStats(defenderProfile);
-
     const combatResult = startCombat({
         attackerStats,
         defenderStats,
@@ -133,25 +167,18 @@ async function handleSkillSelection(interaction, client) {
     await attackerProfile.update({ combatState: combatResult.updatedAttacker });
     await defenderProfile.update({ combatState: combatResult.updatedDefender });
 
-    const inviterUser = await client.users.fetch(fight.playerA);
-    const opponentUser = await client.users.fetch(fight.playerB);
+    const [inviterUser, opponentUser] = await Promise.all([
+        client.users.fetch(fight.playerA),
+        client.users.fetch(fight.playerB)
+    ]);
 
-    const inviterCombat = fight.playerA === attackerId
-        ? combatResult.updatedAttacker
-        : combatResult.updatedDefender;
-    const opponentCombat = fight.playerB === attackerId
-        ? combatResult.updatedAttacker
-        : combatResult.updatedDefender;
-
+    const inviterCombat = fight.playerA === attackerId ? combatResult.updatedAttacker : combatResult.updatedDefender;
+    const opponentCombat = fight.playerB === attackerId ? combatResult.updatedAttacker : combatResult.updatedDefender;
     const inviterMax = fight.playerA === attackerId ? attackerStats : defenderStats;
     const opponentMax = fight.playerB === attackerId ? attackerStats : defenderStats;
 
-    const inviterImage = resolveImage(
-        fight.playerA === attackerId ? attackerProfile : defenderProfile
-    );
-    const opponentImage = resolveImage(
-        fight.playerB === attackerId ? attackerProfile : defenderProfile
-    );
+    const inviterImage = resolveImage(fight.playerA === attackerId ? attackerProfile : defenderProfile);
+    const opponentImage = resolveImage(fight.playerB === attackerId ? attackerProfile : defenderProfile);
 
     if (combatResult.updatedDefender.hp <= 0) {
         clearFightTimeout(fight);
@@ -161,6 +188,10 @@ async function handleSkillSelection(interaction, client) {
         await defenderProfile.update({ combatState: null });
 
         const winner = await client.users.fetch(attackerId);
+        const betOut = await awardBetPotToWinner(fight, attackerId).catch(() => ({ awarded: false, pot: 0 }));
+        const rankedOut = fight.mode === 'ranked'
+            ? await applyRankedMatchResult(attackerId, defenderId).catch(() => ({ ok: false }))
+            : null;
         const finalEmbed = buildArenaEmbed({
             inviterUser,
             opponentUser,
@@ -171,7 +202,11 @@ async function handleSkillSelection(interaction, client) {
             attackerName: interaction.user.username,
             skillName: skill.name,
             totalDamage: combatResult.totalDamage,
-            footerText: `Winner: ${winner.username}`
+            footerText: `Winner: ${winner.username}`,
+            betPot: Math.max(0, Number(fight.betPot) || 0),
+            betNote:
+                (rankedOut?.ok ? `Ranked: +${rankedOut.winnerDelta} / ${rankedOut.loserDelta}.` : '') +
+                (betOut.awarded ? `${rankedOut?.ok ? '\n' : ''}${winner.username} wins ${betOut.pot} crystals from the bet.` : '')
         });
 
         if (inviterImage) finalEmbed.setImage(`attachment://${inviterImage.name}`);
@@ -201,7 +236,8 @@ async function handleSkillSelection(interaction, client) {
         attackerName: interaction.user.username,
         skillName: skill.name,
         totalDamage: combatResult.totalDamage,
-        footerText: `It's ${nextUser.username}'s turn.`
+        footerText: `It's ${nextUser.username}'s turn.`,
+        betPot: Math.max(0, Number(fight.betPot) || 0)
     });
 
     if (inviterImage) updatedEmbed.setImage(`attachment://${inviterImage.name}`);
@@ -209,18 +245,11 @@ async function handleSkillSelection(interaction, client) {
 
     const nextProfile = await Profiles.findOne({ where: { userId: defenderId } });
     const nextSkills = await UserSkills.findAll({
-        where: {
-            profileId: nextProfile.id,
-            equippedSlot: { [Op.not]: null }
-        },
+        where: { profileId: nextProfile.id, equippedSlot: { [Op.not]: null } },
         include: [{
             model: Skills,
             as: 'Skill',
-            where: {
-                effect_type_main: {
-                    [Op.in]: ALLOWED_COMBAT_TYPES
-                }
-            }
+            where: { effect_type_main: { [Op.in]: ALLOWED_COMBAT_TYPES } }
         }]
     });
 
@@ -230,9 +259,14 @@ async function handleSkillSelection(interaction, client) {
         activeFights.delete(fight.playerB);
         await attackerProfile.update({ combatState: null });
         await defenderProfile.update({ combatState: null });
-
+        const betOut = await awardBetPotToWinner(fight, attackerId).catch(() => ({ awarded: false, pot: 0 }));
+        const rankedOut = fight.mode === 'ranked'
+            ? await applyRankedMatchResult(attackerId, defenderId).catch(() => ({ ok: false }))
+            : null;
         return interaction.update({
-            content: `${nextUser.username} has no equipped combat skills. Fight ended.`,
+            content: `${nextUser.username} has no equipped combat skills. Fight ended.` +
+                (rankedOut?.ok ? ` Ranked: +${rankedOut.winnerDelta} / ${rankedOut.loserDelta}.` : '') +
+                (betOut.awarded ? ` ${interaction.user.username} wins ${betOut.pot} crystals from the bet.` : ''),
             embeds: [],
             components: [],
             attachments: [],
@@ -244,13 +278,12 @@ async function handleSkillSelection(interaction, client) {
         .setCustomId('pvp_attack')
         .setPlaceholder('Select a skill')
         .addOptions(
-            nextSkills.slice(0, 25).map(us => ({
+            nextSkills.slice(0, 25).map((us) => ({
                 label: us.Skill.name,
                 value: us.Skill.id.toString(),
                 description: buildSkillOptionDescription(defenderStats, attackerStats, us.Skill, us.level)
             }))
         );
-
     const row = new ActionRowBuilder().addComponents(select);
 
     return interaction.update({
@@ -326,5 +359,5 @@ function buildSkillOptionDescription(attackerStats, defenderStats, skill, skillL
     if (mpCost > 0) parts.push(`MP ${mpCost}`);
     if (spCost > 0) parts.push(`SP ${spCost}`);
     const text = parts.join(' | ');
-    return text.length <= 100 ? text : text.slice(0, 97) + '...';
+    return text.length <= 100 ? text : `${text.slice(0, 97)}...`;
 }
