@@ -8,34 +8,50 @@ module.exports = {
 
     data: new SlashCommandBuilder()
         .setName('skillspanel')
-        .setDescription('Display all available skills with IDs and costs.'),
+        .setDescription('Display all available skills with IDs and costs.')
+        .addStringOption(o =>
+            o.setName('search')
+                .setDescription('Search by skill name (partial match)')
+                .setRequired(false)
+                .setMaxLength(30)
+        ),
 
     async execute(interaction) {
 
         const userId = interaction.user.id;
+        const searchInput = (interaction.options.getString('search') || '').trim();
+        const normalizedSearch = searchInput.toLowerCase();
 
         const skills = await Skills.findAll({
             order: [['id', 'ASC']]
         });
 
-        if (!skills.length) {
+        const filteredSkills = normalizedSearch
+            ? skills.filter(skill => {
+                const name = String(skill.name || '').toLowerCase();
+                const id = String(skill.id || '');
+                return name.includes(normalizedSearch) || id.includes(normalizedSearch);
+            })
+            : skills;
+
+        if (!filteredSkills.length) {
             return interaction.reply({
-                content: 'No skills available.',
+                content: normalizedSearch ? `No skills found for "${searchInput}".` : 'No skills available.',
                 flags: MessageFlags.Ephemeral
             });
         }
 
-        const totalPages = Math.ceil(skills.length / SKILLS_PER_PAGE);
+        const totalPages = Math.ceil(filteredSkills.length / SKILLS_PER_PAGE);
         const page = 1;
 
         return interaction.reply({
-            embeds: [buildEmbed(skills, page, totalPages)],
-            components: [buildButtons(page, totalPages, userId)]
+            embeds: [buildEmbed(filteredSkills, page, totalPages, searchInput)],
+            components: [buildButtons(page, totalPages, userId, searchInput)]
         });
     }
 };
 
-function buildEmbed(skills, page, totalPages) {
+function buildEmbed(skills, page, totalPages, searchInput = '') {
 
     const start = (page - 1) * SKILLS_PER_PAGE;
     const pageSkills = skills.slice(start, start + SKILLS_PER_PAGE);
@@ -44,25 +60,37 @@ function buildEmbed(skills, page, totalPages) {
         `**ID:** ${skill.id} | **${skill.name}**`
     ).join('\n');
 
-    return new EmbedBuilder()
+    const embed = new EmbedBuilder()
         .setColor('#290003')
-        .setTitle('📚 Skills Panel')
+        .setTitle('Skills Panel')
         .setDescription(description)
         .setFooter({ text: `Page ${page} / ${totalPages}` });
+
+    if (searchInput) {
+        embed.addFields({ name: 'Search', value: `\`${searchInput}\`` });
+    }
+
+    return embed;
 }
 
-function buildButtons(page, totalPages, userId) {
+function encodeSearch(searchInput = '') {
+    if (!searchInput) return '0';
+    return Buffer.from(searchInput, 'utf8').toString('hex');
+}
+
+function buildButtons(page, totalPages, userId, searchInput = '') {
+    const encodedSearch = encodeSearch(searchInput);
 
     return new ActionRowBuilder().addComponents(
         new ButtonBuilder()
-            .setCustomId(`panel_prev_${userId}_${page}`)
-            .setLabel('⬅')
+            .setCustomId(`panel_prev_${userId}_${page}_${encodedSearch}`)
+            .setLabel('Prev')
             .setStyle(ButtonStyle.Secondary)
             .setDisabled(page === 1),
 
         new ButtonBuilder()
-            .setCustomId(`panel_next_${userId}_${page}`)
-            .setLabel('➡')
+            .setCustomId(`panel_next_${userId}_${page}_${encodedSearch}`)
+            .setLabel('Next')
             .setStyle(ButtonStyle.Secondary)
             .setDisabled(page === totalPages)
     );

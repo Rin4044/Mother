@@ -1,6 +1,7 @@
 const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentType, MessageFlags } = require('discord.js');
 
 const { Monsters } = require('../../database.js');
+const { resolveMonsterImage } = require('../../utils/resolveMonsterImage');
 
 const ITEMS_PER_PAGE = 10;
 
@@ -12,18 +13,20 @@ module.exports = {
             o.setName('id')
                 .setDescription('Monster ID')
                 .setRequired(false)
+        )
+        .addStringOption(o =>
+            o.setName('search')
+                .setDescription('Search by name (partial match)')
+                .setRequired(false)
+                .setMaxLength(30)
         ),
 
     async execute(interaction) {
-
         const idInput = interaction.options.getInteger('id');
-
-        // =====================================================
-        // SINGLE MONSTER VIEW
-        // =====================================================
+        const searchInput = (interaction.options.getString('search') || '').trim();
+        const normalizedSearch = searchInput.toLowerCase();
 
         if (idInput) {
-
             const monster = await Monsters.findByPk(idInput);
 
             if (!monster) {
@@ -35,69 +38,91 @@ module.exports = {
 
             const embed = new EmbedBuilder()
                 .setColor('#290003')
-                .setTitle(`👹 ${monster.name}`)
+                .setTitle(`Monster: ${monster.name}`)
                 .setDescription(
-                    `HP: ${monster.hp}
-MP: ${monster.mp}
-Stamina: ${monster.stamina}
-Vital Stamina: ${monster.vitalStamina}
-Offense: ${monster.offense}
-Defense: ${monster.defense}
-Magic: ${monster.magic}
-Resistance: ${monster.resistance}
-Speed: ${monster.speed}`
+                    `HP: ${monster.hp}\n` +
+                    `MP: ${monster.mp}\n` +
+                    `Stamina: ${monster.stamina}\n` +
+                    `Vital Stamina: ${monster.vitalStamina}\n` +
+                    `Offense: ${monster.offense}\n` +
+                    `Defense: ${monster.defense}\n` +
+                    `Magic: ${monster.magic}\n` +
+                    `Resistance: ${monster.resistance}\n` +
+                    `Speed: ${monster.speed}`
                 );
 
-            return interaction.reply({ embeds: [embed] });
-        }
+            const imageAttachment = resolveMonsterImage(monster.image || monster.name);
+            if (imageAttachment) {
+                embed.setImage(`attachment://${imageAttachment.name}`);
+            }
 
-        // =====================================================
-        // PAGINATED LIST
-        // =====================================================
+            return interaction.reply({
+                embeds: [embed],
+                files: imageAttachment ? [imageAttachment] : []
+            });
+        }
 
         const monsters = await Monsters.findAll({
             order: [['id', 'ASC']]
         });
 
-        if (!monsters.length) {
+        const filteredMonsters = normalizedSearch
+            ? monsters.filter(monster => {
+                const name = String(monster.name || '').toLowerCase();
+                const id = String(monster.id || '');
+                return name.includes(normalizedSearch) || id.includes(normalizedSearch);
+            })
+            : monsters;
+
+        if (!filteredMonsters.length) {
             return interaction.reply({
-                content: 'No monsters found.',
+                content: normalizedSearch ? `No monsters found for "${searchInput}".` : 'No monsters found.',
                 flags: MessageFlags.Ephemeral
             });
         }
 
         let page = 0;
-        const totalPages = Math.ceil(monsters.length / ITEMS_PER_PAGE);
+        const totalPages = Math.ceil(filteredMonsters.length / ITEMS_PER_PAGE);
         const userId = interaction.user.id;
 
         const buildEmbed = () => {
             const start = page * ITEMS_PER_PAGE;
-            const current = monsters.slice(start, start + ITEMS_PER_PAGE);
+            const current = filteredMonsters.slice(start, start + ITEMS_PER_PAGE);
 
             const list = current
-                .map(m => `**ID ${m.id}** • ${m.name}`)
+                .map(monster => `**ID ${monster.id}** - ${monster.name}`)
                 .join('\n');
 
-            return new EmbedBuilder()
+            const embed = new EmbedBuilder()
                 .setColor('#290003')
-                .setTitle('📖 Monster Index')
+                .setTitle('Monster Index')
                 .setDescription(list)
                 .setFooter({
                     text: `Page ${page + 1} / ${totalPages}`
                 });
+
+            if (normalizedSearch) {
+                embed.addFields({
+                    name: 'Search',
+                    value: `\`${searchInput}\``,
+                    inline: false
+                });
+            }
+
+            return embed;
         };
 
         const buildButtons = () => {
             return new ActionRowBuilder().addComponents(
                 new ButtonBuilder()
                     .setCustomId(`monster_prev_${userId}`)
-                    .setLabel('⬅')
+                    .setLabel('Prev')
                     .setStyle(ButtonStyle.Secondary)
                     .setDisabled(page === 0),
 
                 new ButtonBuilder()
                     .setCustomId(`monster_next_${userId}`)
-                    .setLabel('➡')
+                    .setLabel('Next')
                     .setStyle(ButtonStyle.Secondary)
                     .setDisabled(page >= totalPages - 1)
             );
@@ -116,8 +141,6 @@ Speed: ${monster.speed}`
         });
 
         collector.on('collect', async i => {
-
-            // Security
             if (i.user.id !== userId) {
                 return i.reply({
                     content: 'Not your menu.',
@@ -125,7 +148,7 @@ Speed: ${monster.speed}`
                 });
             }
 
-            await i.deferUpdate(); // Ack immediately
+            await i.deferUpdate();
 
             if (i.customId.startsWith('monster_prev') && page > 0) {
                 page--;

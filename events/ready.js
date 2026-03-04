@@ -1,12 +1,11 @@
-const { ActivityType, ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, AttachmentBuilder } = require('discord.js');
-const path = require('path');
-const fs = require('fs');
+const { ActivityType, ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } = require('discord.js');
 const { Op } = require('sequelize');
 
 const { deployCommands } = require('../functions');
 const { SpawnChannels, SpawnConfig, Monsters, SpawnInstances, Profiles } = require('../database');
 const { rollRarity } = require('../utils/raritySystem');
 const { refreshAllAdventurerGuildPanels } = require('../utils/adventurerGuildService');
+const { resolveMonsterImage } = require('../utils/resolveMonsterImage');
 
 module.exports = {
     name: 'ready',
@@ -212,7 +211,7 @@ async function spawnMonster(client, channel, config) {
             (scaledMonster.terrainDamageType ? `\nTerrain: **${scaledMonster.terrainDamageType}**` : '')
         );
 
-    const imageAttachment = resolveMonsterImageAttachment(monster.image);
+    const imageAttachment = resolveMonsterImage(monster.image || monster.name);
     if (imageAttachment) {
         embed.setImage(`attachment://${imageAttachment.name}`);
     }
@@ -232,15 +231,6 @@ async function spawnMonster(client, channel, config) {
             '\uD83D\uDC51 **A BOSS HAS EMERGED! PREPARE YOURSELVES!**'
         );
     }
-}
-
-function resolveMonsterImageAttachment(imageName) {
-    if (!imageName) return null;
-
-    const imagePath = path.resolve('utils', 'images', imageName);
-    if (!fs.existsSync(imagePath)) return null;
-
-    return new AttachmentBuilder(imagePath, { name: imageName });
 }
 
 function normalizeIntegerArray(value) {

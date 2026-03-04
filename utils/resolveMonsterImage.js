@@ -33,12 +33,29 @@ function buildCandidates(inputName) {
     candidates.add(raw);
 
     const rawNorm = normalizeBaseName(raw);
-    const hasExt = /\.[a-z0-9]+$/i.test(raw);
+    const extMatch = rawNorm.match(/^(.*?)(\.[a-z0-9]+)$/i);
+    const baseNoExt = extMatch ? extMatch[1] : rawNorm;
+    const hasExt = Boolean(extMatch);
+    const baseNoPrefix = baseNoExt.replace(/^\d+_/, '');
 
     for (const variant of typoVariants(rawNorm)) {
         candidates.add(variant);
         candidates.add(`1_${variant}`);
-        if (!hasExt) {
+    }
+
+    for (const variant of typoVariants(baseNoExt)) {
+        candidates.add(variant);
+        candidates.add(`1_${variant}`);
+        for (const ext of EXTENSIONS) {
+            candidates.add(`${variant}${ext}`);
+            candidates.add(`1_${variant}${ext}`);
+        }
+    }
+
+    if (baseNoPrefix && baseNoPrefix !== baseNoExt) {
+        for (const variant of typoVariants(baseNoPrefix)) {
+            candidates.add(variant);
+            candidates.add(`1_${variant}`);
             for (const ext of EXTENSIONS) {
                 candidates.add(`${variant}${ext}`);
                 candidates.add(`1_${variant}${ext}`);
@@ -50,11 +67,17 @@ function buildCandidates(inputName) {
         for (const ext of EXTENSIONS) {
             candidates.add(`${raw}${ext}`);
         }
+    } else {
+        for (const ext of EXTENSIONS) {
+            candidates.add(`${baseNoExt}${ext}`);
+            candidates.add(`1_${baseNoExt}${ext}`);
+        }
     }
 
-    const key = rawNorm;
-    const aliases = FORCED_ALIASES[key] || [];
-    for (const alias of aliases) candidates.add(alias);
+    for (const key of [rawNorm, baseNoExt, baseNoPrefix]) {
+        const aliases = FORCED_ALIASES[key] || [];
+        for (const alias of aliases) candidates.add(alias);
+    }
     return [...candidates];
 }
 
