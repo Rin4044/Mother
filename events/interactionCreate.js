@@ -542,10 +542,10 @@ module.exports = {
                     .setTitle(`⚔ Spawn Fight: ${interaction.user.username} vs ${monster.name}`)
                     .setDescription(
                         `👤 **${interaction.user.username}**\n` +
-                        `❤️ HP: ${playerStats.hp}/${playerStats.hp}\n` +
-                        `🔵 MP: ${playerStats.mp}/${playerStats.mp}\n` +
-                        `🟨 Stamina: ${playerStats.stamina}/${playerStats.stamina}\n` +
-                        `🟩 Vital Stamina: ${playerStats.vitalStamina}/${playerStats.vitalStamina}\n` +
+                        `${formatResourceLine('❤️', 'HP', playerStats.hp, playerStats.hp)}\n` +
+                        `${formatResourceLine('🔵', 'MP', playerStats.mp, playerStats.mp)}\n` +
+                        `${formatResourceLine('🟨', 'Stamina', playerStats.stamina, playerStats.stamina)}\n` +
+                        `${formatResourceLine('🟩', 'Vital Stamina', playerStats.vitalStamina, playerStats.vitalStamina)}\n` +
                         `⚔️ Offense: ${playerStats.offense}\n` +
                         `🛡️ Defense: ${playerStats.defense}\n` +
                         `✨ Magic: ${playerStats.magic}\n` +
@@ -553,10 +553,10 @@ module.exports = {
                         `💨 Speed: ${playerStats.speed}\n\n` +
 
                         `👹 **${monster.name} (${monster.rarity})**\n` +
-                        `❤️ HP: ${monster.hp}/${monster.maxHp}\n` +
-                        `🔵 MP: ${monster.mp}/${monster.maxMp}\n` +
-                        `🟨 Stamina: ${monster.stamina}/${monster.maxStamina ?? monster.stamina}\n` +
-                        `🟩 Vital Stamina: ${monster.vitalStamina}/${monster.maxVitalStamina ?? monster.vitalStamina}\n` +
+                        `${formatResourceLine('❤️', 'HP', monster.hp, monster.maxHp)}\n` +
+                        `${formatResourceLine('🔵', 'MP', monster.mp, monster.maxMp)}\n` +
+                        `${formatResourceLine('🟨', 'Stamina', monster.stamina, monster.maxStamina ?? monster.stamina)}\n` +
+                        `${formatResourceLine('🟩', 'Vital Stamina', monster.vitalStamina, monster.maxVitalStamina ?? monster.vitalStamina)}\n` +
                         `⚔️ Offense: ${monster.offense}\n` +
                         `🛡️ Defense: ${monster.defense}\n` +
                         `✨ Magic: ${monster.magic}\n` +
@@ -990,6 +990,21 @@ function resolveMonsterImage(monster) {
     if (!fs.existsSync(imagePath)) return null;
 
     return new AttachmentBuilder(imagePath, { name: monster.image });
+}
+
+function formatResourceLine(icon, label, current, max) {
+    const now = Math.max(0, Number(current) || 0);
+    const cap = Math.max(1, Number(max) || 1);
+    return `${icon} ${label}: ${now}/${cap} ${buildBar(now, cap)}`;
+}
+
+function buildBar(current, max, width = 12) {
+    const safeWidth = Math.max(6, Number(width) || 12);
+    const ratio = Math.max(0, Math.min(1, (Number(current) || 0) / Math.max(1, Number(max) || 1)));
+    const filled = Math.max(0, Math.min(safeWidth, Math.round(ratio * safeWidth)));
+    const empty = safeWidth - filled;
+    const pct = Math.round(ratio * 100);
+    return `[${'#'.repeat(filled)}${'-'.repeat(empty)}] ${pct}%`;
 }
 
 function estimateSkillDamage(attackerStats, defenderStats, skill, skillLevel = 1) {

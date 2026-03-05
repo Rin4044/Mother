@@ -1,7 +1,7 @@
 const { SlashCommandBuilder, EmbedBuilder, MessageFlags } = require('discord.js');
 const { Profiles } = require('../../database');
 const { getInventory } = require('../../utils/inventoryService');
-const { formatCoreItemLabel, formatCrystalLabel } = require('../../utils/coreEmoji');
+const { formatCoreItemLabel, formatCrystalLabel, formatRaidKeyLabel } = require('../../utils/coreEmoji');
 
 const CORE_ORDER = {
     'Mediocre Monster Core': 1,
@@ -19,6 +19,9 @@ function isPotionItem(itemName = '') {
 }
 
 function toItemLine(entry) {
+    if (String(entry?.itemName || '').trim() === 'Raid Key') {
+        return `- ${formatRaidKeyLabel(entry.quantity)}`;
+    }
     return `- ${formatCoreItemLabel(entry.itemName)} x${entry.quantity}`;
 }
 

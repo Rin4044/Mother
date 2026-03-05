@@ -239,26 +239,41 @@ function buildDetailedStats(
 ) {
     return (
         `Player: **${username}**\n` +
-        `❤️ HP: ${playerCurrent.hp}/${playerMax.hp}\n` +
-        `🔵 MP: ${playerCurrent.mp}/${playerMax.mp}\n` +
-        `🟨 Stamina: ${playerCurrent.stamina}/${playerMax.stamina}\n` +
-        `🟩 Vital Stamina: ${playerCurrent.vitalStamina}/${playerMax.vitalStamina}\n` +
+        `${formatResourceLine('❤️', 'HP', playerCurrent.hp, playerMax.hp)}\n` +
+        `${formatResourceLine('🔵', 'MP', playerCurrent.mp, playerMax.mp)}\n` +
+        `${formatResourceLine('🟨', 'Stamina', playerCurrent.stamina, playerMax.stamina)}\n` +
+        `${formatResourceLine('🟩', 'Vital Stamina', playerCurrent.vitalStamina, playerMax.vitalStamina)}\n` +
         `⚔️ Offense: ${playerMax.offense}\n` +
         `🛡️ Defense: ${playerMax.defense}\n` +
         `✨ Magic: ${playerMax.magic}\n` +
         `🧿 Resistance: ${playerMax.resistance}\n` +
         `💨 Speed: ${playerMax.speed}\n\n` +
         `Monster: **${monsterName}**\n` +
-        `❤️ HP: ${monsterCurrent.hp}/${monsterMax.hp}\n` +
-        `🔵 MP: ${monsterCurrent.mp}/${monsterMax.mp}\n` +
-        `🟨 Stamina: ${monsterCurrent.stamina}/${monsterMax.stamina}\n` +
-        `🟩 Vital Stamina: ${monsterCurrent.vitalStamina}/${monsterMax.vitalStamina}\n` +
+        `${formatResourceLine('❤️', 'HP', monsterCurrent.hp, monsterMax.hp)}\n` +
+        `${formatResourceLine('🔵', 'MP', monsterCurrent.mp, monsterMax.mp)}\n` +
+        `${formatResourceLine('🟨', 'Stamina', monsterCurrent.stamina, monsterMax.stamina)}\n` +
+        `${formatResourceLine('🟩', 'Vital Stamina', monsterCurrent.vitalStamina, monsterMax.vitalStamina)}\n` +
         `⚔️ Offense: ${monsterMax.offense}\n` +
         `🛡️ Defense: ${monsterMax.defense}\n` +
         `✨ Magic: ${monsterMax.magic}\n` +
         `🧿 Resistance: ${monsterMax.resistance}\n` +
         `💨 Speed: ${monsterMax.speed}`
     );
+}
+
+function formatResourceLine(icon, label, current, max) {
+    const now = Math.max(0, Number(current) || 0);
+    const cap = Math.max(1, Number(max) || 1);
+    return `${icon} ${label}: ${now}/${cap} ${buildBar(now, cap)}`;
+}
+
+function buildBar(current, max, width = 12) {
+    const safeWidth = Math.max(6, Number(width) || 12);
+    const ratio = Math.max(0, Math.min(1, (Number(current) || 0) / Math.max(1, Number(max) || 1)));
+    const filled = Math.max(0, Math.min(safeWidth, Math.round(ratio * safeWidth)));
+    const empty = safeWidth - filled;
+    const pct = Math.round(ratio * 100);
+    return `[${'#'.repeat(filled)}${'-'.repeat(empty)}] ${pct}%`;
 }
 
 function estimateSkillDamage(attackerStats, defenderStats, skill, skillLevel = 1) {

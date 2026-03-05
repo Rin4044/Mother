@@ -822,26 +822,41 @@ function buildFullStatsEmbed(username, state, maxPlayer, monster, monsterMaxStat
 
     return (
         `Player: **${username}**\n` +
-        `❤️ HP: ${state.entityA.hp}/${playerMaxHp}${playerShield > 0 ? ` | 🛡 ${playerShield}` : ''}\n` +
-        `🔵 MP: ${state.entityA.mp}/${playerMaxMp}\n` +
-        `🟨 Stamina: ${state.entityA.stamina}/${playerMaxStamina}\n` +
-        `🟩 Vital Stamina: ${state.entityA.vitalStamina}/${playerMaxVital}\n` +
+        `${formatResourceLine('❤️', 'HP', state.entityA.hp, playerMaxHp, playerShield > 0 ? ` | 🛡 ${playerShield}` : '')}\n` +
+        `${formatResourceLine('🔵', 'MP', state.entityA.mp, playerMaxMp)}\n` +
+        `${formatResourceLine('🟨', 'Stamina', state.entityA.stamina, playerMaxStamina)}\n` +
+        `${formatResourceLine('🟩', 'Vital Stamina', state.entityA.vitalStamina, playerMaxVital)}\n` +
         `⚔️ Offense: ${state.entityA.offense}\n` +
         `🛡️ Defense: ${state.entityA.defense}\n` +
         `✨ Magic: ${state.entityA.magic}\n` +
         `🧿 Resistance: ${state.entityA.resistance}\n` +
         `💨 Speed: ${state.entityA.speed}\n\n` +
         `Monster: **${monsterName}${monsterSuffix}**\n` +
-        `❤️ HP: ${state.entityB.hp}/${monsterMaxHp}${monsterShield > 0 ? ` | 🛡 ${monsterShield}` : ''}\n` +
-        `🔵 MP: ${state.entityB.mp}/${monsterMaxMp}\n` +
-        `🟨 Stamina: ${state.entityB.stamina}/${monsterMaxStamina}\n` +
-        `🟩 Vital Stamina: ${state.entityB.vitalStamina}/${monsterMaxVital}\n` +
+        `${formatResourceLine('❤️', 'HP', state.entityB.hp, monsterMaxHp, monsterShield > 0 ? ` | 🛡 ${monsterShield}` : '')}\n` +
+        `${formatResourceLine('🔵', 'MP', state.entityB.mp, monsterMaxMp)}\n` +
+        `${formatResourceLine('🟨', 'Stamina', state.entityB.stamina, monsterMaxStamina)}\n` +
+        `${formatResourceLine('🟩', 'Vital Stamina', state.entityB.vitalStamina, monsterMaxVital)}\n` +
         `⚔️ Offense: ${state.entityB.offense}\n` +
         `🛡️ Defense: ${state.entityB.defense}\n` +
         `✨ Magic: ${state.entityB.magic}\n` +
         `🧿 Resistance: ${state.entityB.resistance}\n` +
         `💨 Speed: ${state.entityB.speed}`
     );
+}
+
+function formatResourceLine(icon, label, current, max, suffix = '') {
+    const now = Math.max(0, Number(current) || 0);
+    const cap = Math.max(1, Number(max) || 1);
+    return `${icon} ${label}: ${now}/${cap} ${buildBar(now, cap)}${suffix}`;
+}
+
+function buildBar(current, max, width = 12) {
+    const safeWidth = Math.max(6, Number(width) || 12);
+    const ratio = Math.max(0, Math.min(1, (Number(current) || 0) / Math.max(1, Number(max) || 1)));
+    const filled = Math.max(0, Math.min(safeWidth, Math.round(ratio * safeWidth)));
+    const empty = safeWidth - filled;
+    const pct = Math.round(ratio * 100);
+    return `[${'#'.repeat(filled)}${'-'.repeat(empty)}] ${pct}%`;
 }
 
 async function updateFightEmbed(interaction, profile, monster, monsterMaxStats, state, result, skillXpSummary, options = {}) {
