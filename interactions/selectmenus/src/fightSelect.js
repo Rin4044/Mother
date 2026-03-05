@@ -826,21 +826,21 @@ function buildFullStatsEmbed(username, state, maxPlayer, monster, monsterMaxStat
         `${formatResourceLine('🔵', 'MP', state.entityA.mp, playerMaxMp)}\n` +
         `${formatResourceLine('🟨', 'Stamina', state.entityA.stamina, playerMaxStamina)}\n` +
         `${formatResourceLine('🟩', 'Vital Stamina', state.entityA.vitalStamina, playerMaxVital)}\n` +
-        `⚔️ Offense: ${state.entityA.offense}\n` +
-        `🛡️ Defense: ${state.entityA.defense}\n` +
-        `✨ Magic: ${state.entityA.magic}\n` +
-        `🧿 Resistance: ${state.entityA.resistance}\n` +
-        `💨 Speed: ${state.entityA.speed}\n\n` +
+        `${formatStatLine('⚔️', 'Offense', state.entityA.offense)}\n` +
+        `${formatStatLine('🛡️', 'Defense', state.entityA.defense)}\n` +
+        `${formatStatLine('✨', 'Magic', state.entityA.magic)}\n` +
+        `${formatStatLine('🧿', 'Resistance', state.entityA.resistance)}\n` +
+        `${formatStatLine('💨', 'Speed', state.entityA.speed)}\n\n` +
         `Monster: **${monsterName}${monsterSuffix}**\n` +
         `${formatResourceLine('❤️', 'HP', state.entityB.hp, monsterMaxHp, monsterShield > 0 ? ` | 🛡 ${monsterShield}` : '')}\n` +
         `${formatResourceLine('🔵', 'MP', state.entityB.mp, monsterMaxMp)}\n` +
         `${formatResourceLine('🟨', 'Stamina', state.entityB.stamina, monsterMaxStamina)}\n` +
         `${formatResourceLine('🟩', 'Vital Stamina', state.entityB.vitalStamina, monsterMaxVital)}\n` +
-        `⚔️ Offense: ${state.entityB.offense}\n` +
-        `🛡️ Defense: ${state.entityB.defense}\n` +
-        `✨ Magic: ${state.entityB.magic}\n` +
-        `🧿 Resistance: ${state.entityB.resistance}\n` +
-        `💨 Speed: ${state.entityB.speed}`
+        `${formatStatLine('⚔️', 'Offense', state.entityB.offense)}\n` +
+        `${formatStatLine('🛡️', 'Defense', state.entityB.defense)}\n` +
+        `${formatStatLine('✨', 'Magic', state.entityB.magic)}\n` +
+        `${formatStatLine('🧿', 'Resistance', state.entityB.resistance)}\n` +
+        `${formatStatLine('💨', 'Speed', state.entityB.speed)}`
     );
 }
 
@@ -850,6 +850,12 @@ function formatResourceLine(icon, label, current, max, suffix = '') {
     const value = `${now}/${cap}`;
     const left = `${icon} ${String(label).padEnd(13, ' ')}`;
     const right = `${String(value).padStart(13, ' ')} ${buildBar(now, cap)}${suffix}`;
+    return `\`${left}${right}\``;
+}
+
+function formatStatLine(icon, label, value) {
+    const left = `${icon} ${String(label).padEnd(13, ' ')}`;
+    const right = `${String(Math.max(0, Number(value) || 0)).padStart(13, ' ')}`;
     return `\`${left}${right}\``;
 }
 

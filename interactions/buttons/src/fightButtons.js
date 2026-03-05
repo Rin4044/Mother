@@ -243,21 +243,21 @@ function buildDetailedStats(
         `${formatResourceLine('🔵', 'MP', playerCurrent.mp, playerMax.mp)}\n` +
         `${formatResourceLine('🟨', 'Stamina', playerCurrent.stamina, playerMax.stamina)}\n` +
         `${formatResourceLine('🟩', 'Vital Stamina', playerCurrent.vitalStamina, playerMax.vitalStamina)}\n` +
-        `⚔️ Offense: ${playerMax.offense}\n` +
-        `🛡️ Defense: ${playerMax.defense}\n` +
-        `✨ Magic: ${playerMax.magic}\n` +
-        `🧿 Resistance: ${playerMax.resistance}\n` +
-        `💨 Speed: ${playerMax.speed}\n\n` +
+        `${formatStatLine('⚔️', 'Offense', playerMax.offense)}\n` +
+        `${formatStatLine('🛡️', 'Defense', playerMax.defense)}\n` +
+        `${formatStatLine('✨', 'Magic', playerMax.magic)}\n` +
+        `${formatStatLine('🧿', 'Resistance', playerMax.resistance)}\n` +
+        `${formatStatLine('💨', 'Speed', playerMax.speed)}\n\n` +
         `Monster: **${monsterName}**\n` +
         `${formatResourceLine('❤️', 'HP', monsterCurrent.hp, monsterMax.hp)}\n` +
         `${formatResourceLine('🔵', 'MP', monsterCurrent.mp, monsterMax.mp)}\n` +
         `${formatResourceLine('🟨', 'Stamina', monsterCurrent.stamina, monsterMax.stamina)}\n` +
         `${formatResourceLine('🟩', 'Vital Stamina', monsterCurrent.vitalStamina, monsterMax.vitalStamina)}\n` +
-        `⚔️ Offense: ${monsterMax.offense}\n` +
-        `🛡️ Defense: ${monsterMax.defense}\n` +
-        `✨ Magic: ${monsterMax.magic}\n` +
-        `🧿 Resistance: ${monsterMax.resistance}\n` +
-        `💨 Speed: ${monsterMax.speed}`
+        `${formatStatLine('⚔️', 'Offense', monsterMax.offense)}\n` +
+        `${formatStatLine('🛡️', 'Defense', monsterMax.defense)}\n` +
+        `${formatStatLine('✨', 'Magic', monsterMax.magic)}\n` +
+        `${formatStatLine('🧿', 'Resistance', monsterMax.resistance)}\n` +
+        `${formatStatLine('💨', 'Speed', monsterMax.speed)}`
     );
 }
 
@@ -267,6 +267,12 @@ function formatResourceLine(icon, label, current, max) {
     const value = `${now}/${cap}`;
     const left = `${icon} ${String(label).padEnd(13, ' ')}`;
     const right = `${String(value).padStart(13, ' ')} ${buildBar(now, cap)}`;
+    return `\`${left}${right}\``;
+}
+
+function formatStatLine(icon, label, value) {
+    const left = `${icon} ${String(label).padEnd(13, ' ')}`;
+    const right = `${String(Math.max(0, Number(value) || 0)).padStart(13, ' ')}`;
     return `\`${left}${right}\``;
 }
 

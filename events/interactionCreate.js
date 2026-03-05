@@ -546,22 +546,22 @@ module.exports = {
                         `${formatResourceLine('🔵', 'MP', playerStats.mp, playerStats.mp)}\n` +
                         `${formatResourceLine('🟨', 'Stamina', playerStats.stamina, playerStats.stamina)}\n` +
                         `${formatResourceLine('🟩', 'Vital Stamina', playerStats.vitalStamina, playerStats.vitalStamina)}\n` +
-                        `⚔️ Offense: ${playerStats.offense}\n` +
-                        `🛡️ Defense: ${playerStats.defense}\n` +
-                        `✨ Magic: ${playerStats.magic}\n` +
-                        `🧿 Resistance: ${playerStats.resistance}\n` +
-                        `💨 Speed: ${playerStats.speed}\n\n` +
+                        `${formatStatLine('⚔️', 'Offense', playerStats.offense)}\n` +
+                        `${formatStatLine('🛡️', 'Defense', playerStats.defense)}\n` +
+                        `${formatStatLine('✨', 'Magic', playerStats.magic)}\n` +
+                        `${formatStatLine('🧿', 'Resistance', playerStats.resistance)}\n` +
+                        `${formatStatLine('💨', 'Speed', playerStats.speed)}\n\n` +
 
                         `👹 **${monster.name} (${monster.rarity})**\n` +
                         `${formatResourceLine('❤️', 'HP', monster.hp, monster.maxHp)}\n` +
                         `${formatResourceLine('🔵', 'MP', monster.mp, monster.maxMp)}\n` +
                         `${formatResourceLine('🟨', 'Stamina', monster.stamina, monster.maxStamina ?? monster.stamina)}\n` +
                         `${formatResourceLine('🟩', 'Vital Stamina', monster.vitalStamina, monster.maxVitalStamina ?? monster.vitalStamina)}\n` +
-                        `⚔️ Offense: ${monster.offense}\n` +
-                        `🛡️ Defense: ${monster.defense}\n` +
-                        `✨ Magic: ${monster.magic}\n` +
-                        `🧿 Resistance: ${monster.resistance}\n` +
-                        `💨 Speed: ${monster.speed}\n\n` +
+                        `${formatStatLine('⚔️', 'Offense', monster.offense)}\n` +
+                        `${formatStatLine('🛡️', 'Defense', monster.defense)}\n` +
+                        `${formatStatLine('✨', 'Magic', monster.magic)}\n` +
+                        `${formatStatLine('🧿', 'Resistance', monster.resistance)}\n` +
+                        `${formatStatLine('💨', 'Speed', monster.speed)}\n\n` +
 
                         `────────────────────────\nChoose your first move.`
                     );
@@ -998,6 +998,12 @@ function formatResourceLine(icon, label, current, max) {
     const value = `${now}/${cap}`;
     const left = `${icon} ${String(label).padEnd(13, ' ')}`;
     const right = `${String(value).padStart(13, ' ')} ${buildBar(now, cap)}`;
+    return `\`${left}${right}\``;
+}
+
+function formatStatLine(icon, label, value) {
+    const left = `${icon} ${String(label).padEnd(13, ' ')}`;
+    const right = `${String(Math.max(0, Number(value) || 0)).padStart(13, ' ')}`;
     return `\`${left}${right}\``;
 }
 
