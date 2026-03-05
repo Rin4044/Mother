@@ -264,7 +264,10 @@ function buildDetailedStats(
 function formatResourceLine(icon, label, current, max) {
     const now = Math.max(0, Number(current) || 0);
     const cap = Math.max(1, Number(max) || 1);
-    return `${icon} ${label}: ${now}/${cap} ${buildBar(now, cap)}`;
+    const value = `${now}/${cap}`;
+    const left = `${icon} ${String(label).padEnd(13, ' ')}`;
+    const right = `${String(value).padStart(13, ' ')} ${buildBar(now, cap)}`;
+    return `\`${left}${right}\``;
 }
 
 function buildBar(current, max, width = 10) {
