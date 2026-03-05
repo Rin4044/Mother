@@ -998,13 +998,14 @@ function formatResourceLine(icon, label, current, max) {
     return `${icon} ${label}: ${now}/${cap} ${buildBar(now, cap)}`;
 }
 
-function buildBar(current, max, width = 12) {
-    const safeWidth = Math.max(6, Number(width) || 12);
+function buildBar(current, max, width = 10) {
+    const safeWidth = Math.max(6, Number(width) || 10);
     const ratio = Math.max(0, Math.min(1, (Number(current) || 0) / Math.max(1, Number(max) || 1)));
     const filled = Math.max(0, Math.min(safeWidth, Math.round(ratio * safeWidth)));
     const empty = safeWidth - filled;
     const pct = Math.round(ratio * 100);
-    return `[${'#'.repeat(filled)}${'-'.repeat(empty)}] ${pct}%`;
+    const bar = `${'█'.repeat(filled)}${'░'.repeat(empty)}`;
+    return pct >= 100 ? bar : `${bar} ${pct}%`;
 }
 
 function estimateSkillDamage(attackerStats, defenderStats, skill, skillLevel = 1) {
