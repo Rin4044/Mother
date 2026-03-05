@@ -199,15 +199,15 @@ async function handleStart(interaction, profile, progress) {
         .setTitle(`Tier ${progress.tier} - Stage ${progress.stage}`)
         .setDescription(
             `Monster: **${monster.name}**\n\n` +
-            `HP: ${monsterHpToShow}/${scaled.hp}\n` +
-            `MP: ${scaled.mp}/${scaled.mp}\n` +
-            `Stamina: ${scaled.stamina}/${scaled.stamina}\n` +
-            `Vital Stamina: ${scaled.vitalStamina}/${scaled.vitalStamina}\n` +
-            `Offense: ${scaled.offense}\n` +
-            `Defense: ${scaled.defense}\n` +
-            `Magic: ${scaled.magic}\n` +
-            `Resistance: ${scaled.resistance}\n` +
-            `Speed: ${scaled.speed}`
+            `${formatResourceLine('❤️', 'HP', monsterHpToShow, scaled.hp)}\n` +
+            `${formatResourceLine('🔵', 'MP', scaled.mp, scaled.mp)}\n` +
+            `${formatResourceLine('🟨', 'Stamina', scaled.stamina, scaled.stamina)}\n` +
+            `${formatResourceLine('🟩', 'Vital Stamina', scaled.vitalStamina, scaled.vitalStamina)}\n` +
+            `${formatStatLine('⚔️', 'Offense', scaled.offense)}\n` +
+            `${formatStatLine('🛡️', 'Defense', scaled.defense)}\n` +
+            `${formatStatLine('✨', 'Magic', scaled.magic)}\n` +
+            `${formatStatLine('🧿', 'Resistance', scaled.resistance)}\n` +
+            `${formatStatLine('💨', 'Speed', scaled.speed)}`
         );
 
     const row = new ActionRowBuilder().addComponents(
@@ -218,6 +218,31 @@ async function handleStart(interaction, profile, progress) {
     );
 
     return interaction.reply({ embeds: [embed], components: [row] });
+}
+
+function formatResourceLine(icon, label, current, max) {
+    const now = Math.max(0, Number(current) || 0);
+    const cap = Math.max(1, Number(max) || 1);
+    const value = `${now}/${cap}`;
+    const left = `${icon} ${String(label).padEnd(13, ' ')}`;
+    const right = `${String(value).padStart(13, ' ')} ${buildBar(now, cap)}`;
+    return `\`${left}${right}\``;
+}
+
+function formatStatLine(icon, label, value) {
+    const left = `${icon} ${String(label).padEnd(13, ' ')}`;
+    const right = `${String(Math.max(0, Number(value) || 0)).padStart(13, ' ')}`;
+    return `\`${left}${right}\``;
+}
+
+function buildBar(current, max, width = 10) {
+    const safeWidth = Math.max(6, Number(width) || 10);
+    const ratio = Math.max(0, Math.min(1, (Number(current) || 0) / Math.max(1, Number(max) || 1)));
+    const filled = Math.max(0, Math.min(safeWidth, Math.round(ratio * safeWidth)));
+    const empty = safeWidth - filled;
+    const pct = Math.round(ratio * 100);
+    const bar = `${'█'.repeat(filled)}${'░'.repeat(empty)}`;
+    return pct >= 100 ? bar : `${bar} ${pct}%`;
 }
 
 // ==========================================
