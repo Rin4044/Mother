@@ -1,4 +1,11 @@
-const { SlashCommandBuilder, EmbedBuilder, MessageFlags } = require('discord.js');
+const {
+    SlashCommandBuilder,
+    EmbedBuilder,
+    ActionRowBuilder,
+    StringSelectMenuBuilder,
+    ComponentType,
+    MessageFlags
+} = require('discord.js');
 
 const { Profiles, UserTitles, Titles, UserSkills, Skills } = require('../../database.js');
 const {
@@ -7,6 +14,10 @@ const {
     formatRaceName
 } = require('../../utils/evolutionConfig');
 const { RACES } = require('../../utils/races');
+
+const SELECT_CUSTOM_ID = 'racetree_select';
+const SELECT_TIMEOUT_MS = 120000;
+const TREE_ADJACENCY = buildTreeAdjacency();
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -49,20 +60,82 @@ module.exports = {
         });
 
         const rootKey = toRuleKey(branchRoot);
-        const initialEmbed = await buildRaceDetailEmbed(rootKey, profile);
+        const branchKeys = collectBranchKeys(rootKey);
+        const profileRaceKey = toRuleKey(profile?.race || '');
+        const initialRaceKey = branchKeys.has(profileRaceKey) ? profileRaceKey : rootKey;
+
+        const initialEmbed = await buildRaceDetailEmbed(initialRaceKey, profile, branchKeys);
         initialEmbed.setTitle(`${formatRaceName(rootKey)} Tree`);
-        initialEmbed.setDescription(buildTreeOverview(rootKey));
+        initialEmbed.setDescription(buildTreeOverview(branchKeys));
+
+        const row = new ActionRowBuilder().addComponents(
+            new StringSelectMenuBuilder()
+                .setCustomId(`${SELECT_CUSTOM_ID}_${subcommand}`)
+                .setPlaceholder('Select a race in this branch')
+                .addOptions(buildBranchOptions(branchKeys))
+        );
 
         await interaction.reply({
             embeds: [initialEmbed],
+            components: [row],
             flags: MessageFlags.Ephemeral
+        });
+
+        const message = await interaction.fetchReply();
+        const collector = message.createMessageComponentCollector({
+            componentType: ComponentType.StringSelect,
+            time: SELECT_TIMEOUT_MS
+        });
+
+        collector.on('collect', async (i) => {
+            if (i.user.id !== interaction.user.id) {
+                return i.reply({
+                    content: 'Not your menu.',
+                    flags: MessageFlags.Ephemeral
+                });
+            }
+
+            await i.deferUpdate();
+
+            const selectedKey = i.values[0];
+            const embed = await buildRaceDetailEmbed(selectedKey, profile, branchKeys);
+            embed.setTitle(`${formatRaceName(rootKey)} Tree`);
+            embed.setDescription(buildTreeOverview(branchKeys));
+
+            await i.editReply({
+                embeds: [embed],
+                components: [row]
+            });
+        });
+
+        collector.on('end', async () => {
+            await message.edit({ components: [] }).catch(() => {});
         });
     }
 };
 
-function buildTreeOverview(rootKey) {
-    const rootRace = fromRuleKey(rootKey);
-    const branchKeys = collectBranchKeys(rootRace);
+function buildTreeAdjacency() {
+    const adjacency = new Map();
+    for (const [parent, children] of Object.entries(EVOLUTION_TREE)) {
+        adjacency.set(
+            toRuleKey(parent),
+            (children || []).map((child) => toRuleKey(child))
+        );
+    }
+    return adjacency;
+}
+
+function buildBranchOptions(branchKeys) {
+    return [...branchKeys]
+        .map((key) => ({
+            label: formatRaceName(key),
+            value: key
+        }))
+        .sort((a, b) => a.label.localeCompare(b.label))
+        .slice(0, 25);
+}
+
+function buildTreeOverview(branchKeys) {
     const lines = [];
     for (const [parent, children] of Object.entries(EVOLUTION_TREE)) {
         const parentKey = toRuleKey(parent);
@@ -78,34 +151,33 @@ function buildTreeOverview(rootKey) {
     return lines.join('\n') || 'No evolutions found for this branch.';
 }
 
-function collectBranchKeys(rootRace) {
+function collectBranchKeys(rootKey) {
     const visited = new Set();
-    const queue = [rootRace];
+    const queue = [toRuleKey(rootKey)];
 
     while (queue.length) {
-        const current = queue.shift();
-        const currentKey = toRuleKey(current);
+        const currentKey = queue.shift();
         if (visited.has(currentKey)) continue;
         visited.add(currentKey);
 
-        const children = EVOLUTION_TREE[current] || [];
+        const children = TREE_ADJACENCY.get(currentKey) || [];
         for (const child of children) {
-            queue.push(child);
+            queue.push(toRuleKey(child));
         }
     }
 
     return visited;
 }
 
-async function buildRaceDetailEmbed(ruleKey, profile) {
+async function buildRaceDetailEmbed(ruleKey, profile, branchKeys = null) {
     const raceName = fromRuleKey(ruleKey);
     const raceData = RACES[raceName];
     const rule = getEvolutionRule(ruleKey);
-    const branchKeys = collectBranchKeys(raceName);
-    const branchRaces = [...branchKeys]
+    const effectiveBranchKeys = branchKeys || collectBranchKeys(ruleKey);
+    const branchRaces = [...effectiveBranchKeys]
         .map(key => formatRaceName(key))
         .sort((a, b) => a.localeCompare(b));
-    const next = (EVOLUTION_TREE[raceName] || []).map(toRuleKey);
+    const next = (TREE_ADJACENCY.get(ruleKey) || []).map(toRuleKey);
 
     const requirements = formatRequirements(rule);
     const rewards = formatRewards(rule);
