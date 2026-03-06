@@ -90,8 +90,8 @@ async function routeSelectMenu(interaction, client) {
     // ==============================
     // RACE TREE MENU
     // ==============================
-    // Handled by the command-local collector in /race tree.
-    if (id.startsWith('race_tree_select')) {
+    // Handled by the command-local collector in /racetree.
+    if (id.startsWith('race_tree_select') || id.startsWith('racetree_select')) {
         return;
     }
 
