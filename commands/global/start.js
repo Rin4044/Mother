@@ -13,10 +13,10 @@ const STARTER_SKILLS_BY_RACE = {
         { skillId: 26, level: 1 }   // Poison Resistance
     ],
     'young elf': [
-        { skillId: 3, level: 2 },   // Night Vision
+        { skillId: 80, level: 1 },  // Hit
+        { skillId: 22, level: 1 },  // Wind Attack
         { skillId: 54, level: 1 },  // Stealth
-        { skillId: 89, level: 1 },  // MP Recovery Speed
-        { skillId: 134, level: 1 }  // Detection
+        { skillId: 89, level: 1 }   // MP Recovery Speed
     ],
     human: [
         { skillId: 80, level: 1 },  // Hit
