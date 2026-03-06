@@ -5,6 +5,33 @@ const { calculateXpForLevel } = require('../../utils/xpUtils');
 const { RACES } = require('../../utils/races');
 const { RACE_CONFIG } = require('../../utils/evolutionConfig');
 
+const STARTER_SKILLS_BY_RACE = {
+    'small lesser taratect': [
+        { skillId: 1, level: 1 },   // Poison Fang
+        { skillId: 2, level: 3 },   // Spider Thread
+        { skillId: 3, level: 9 },   // Night Vision
+        { skillId: 26, level: 1 }   // Poison Resistance
+    ],
+    'young elf': [
+        { skillId: 3, level: 2 },   // Night Vision
+        { skillId: 54, level: 1 },  // Stealth
+        { skillId: 89, level: 1 },  // MP Recovery Speed
+        { skillId: 134, level: 1 }  // Detection
+    ],
+    human: [
+        { skillId: 80, level: 1 },  // Hit
+        { skillId: 117, level: 1 }, // Strength
+        { skillId: 121, level: 1 }, // Sturdy
+        { skillId: 134, level: 1 }  // Detection
+    ],
+    'lesser demon': [
+        { skillId: 80, level: 1 },  // Hit
+        { skillId: 117, level: 2 }, // Strength
+        { skillId: 72, level: 1 },  // Intimidation
+        { skillId: 29, level: 1 }   // Heretic Magic
+    ]
+};
+
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('start')
@@ -71,20 +98,16 @@ module.exports = {
 
             console.log('Profile created. Adding skills...');
 
-            const skillIds = [1, 2, 3, 26];
+            const skillsToAssign =
+                STARTER_SKILLS_BY_RACE[selectedRace] ||
+                STARTER_SKILLS_BY_RACE['small lesser taratect'];
+            const skillIds = [...new Set(skillsToAssign.map((s) => s.skillId))];
             const skills = await Skills.findAll({ where: { id: skillIds } });
 
             if (skills.length !== skillIds.length) {
                 console.error('Some skills not found in the database.');
                 return interaction.reply({ content: 'Error: Some skills are not found in the database!', flags: MessageFlags.Ephemeral });
             }
-
-            const skillsToAssign = [
-                { skillId: 1, level: 1 },
-                { skillId: 2, level: 3 },
-                { skillId: 3, level: 9 },
-                { skillId: 26, level: 1 }
-            ];
 
             for (const skillData of skillsToAssign) {
                 const skillDetails = skills.find(skill => skill.id === skillData.skillId);
