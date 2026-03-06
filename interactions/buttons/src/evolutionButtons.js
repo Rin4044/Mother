@@ -39,6 +39,12 @@ function canonicalizeRequiredSkillName(raceKey, skillName) {
     return name;
 }
 
+function formatRequirementLabel(raceKey, req) {
+    const name = canonicalizeRequiredSkillName(raceKey, req?.name);
+    const level = req?.level || 1;
+    return `${name} Lv${level}`;
+}
+
 function disableButtonRows(components = []) {
     return components.map(row => {
         const disabledRow = new ActionRowBuilder();
@@ -116,13 +122,13 @@ function getBestSkillLevelForRequirement(skillLevelMap, skillName) {
     return best;
 }
 
-function buildGateMessage(gate) {
+function buildGateMessage(gate, raceKey = '') {
     const parts = [];
     if (gate.missingTitles.length) {
         parts.push(`Missing titles: ${gate.missingTitles.join(', ')}`);
     }
     if (gate.missingSkills.length) {
-        parts.push(`Missing skills: ${gate.missingSkills.map(s => `${s.name} Lv${s.level || 1}`).join(', ')}`);
+        parts.push(`Missing skills: ${gate.missingSkills.map((s) => formatRequirementLabel(raceKey, s)).join(', ')}`);
     }
     return parts.join('\n');
 }
@@ -260,7 +266,7 @@ async function confirmEvolution(interaction, userId, raceKey) {
 
     if (!gate.eligible) {
         return interaction.editReply({
-            content: `You do not meet the prerequisites for ${formatRaceName(raceKey)}.\n${buildGateMessage(gate)}`,
+            content: `You do not meet the prerequisites for ${formatRaceName(raceKey)}.\n${buildGateMessage(gate, raceKey)}`,
             embeds: [],
             components: [],
             files: []
@@ -345,7 +351,7 @@ async function previewEvolution(interaction, userId, raceKey) {
 
     const footer = gate.eligible
         ? 'Confirm to evolve into this race.'
-        : `Locked: ${buildGateMessage(gate)}`;
+        : `Locked: ${buildGateMessage(gate, raceKey)}`;
 
     const embed = new EmbedBuilder()
         .setColor('#290003')

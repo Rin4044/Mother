@@ -99,6 +99,12 @@ function canonicalizeRequiredSkillName(raceKey, skillName) {
     return name;
 }
 
+function formatRequirementLabel(raceKey, req) {
+    const name = canonicalizeRequiredSkillName(raceKey, req?.name);
+    const level = req?.level || 1;
+    return `${name} Lv${level}`;
+}
+
 function evaluateEvolutionEligibility(raceKey, rule, titleNameSet, skillLevelMap) {
     const requiredTitles = rule.requiredTitles || [];
     const requiredSkills = (rule.requiredSkills || []).map((req) => ({
@@ -296,7 +302,7 @@ module.exports = {
             }
             if (gate.missingSkills.length) {
                 const missingSkills = gate.missingSkills
-                    .map(s => `${s.name} Lv${s.level || 1}`)
+                    .map((s) => formatRequirementLabel(raceKey, s))
                     .join(', ');
                 reasons.push(`skills: ${missingSkills}`);
             }
