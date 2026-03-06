@@ -16,7 +16,7 @@ const {
 const { RACES } = require('../../utils/races');
 
 const SELECT_CUSTOM_ID = 'racetree_select';
-const SELECT_TIMEOUT_MS = 120000;
+const SELECT_TIMEOUT_MS = 900000;
 const TREE_ADJACENCY = buildTreeAdjacency();
 
 module.exports = {
@@ -63,8 +63,11 @@ module.exports = {
         const branchKeys = collectBranchKeys(rootKey);
         const profileRaceKey = toRuleKey(profile?.race || '');
         const initialRaceKey = branchKeys.has(profileRaceKey) ? profileRaceKey : rootKey;
+        const eligibilityContext = profile
+            ? await buildEligibilityContext(profile.id)
+            : null;
 
-        const initialEmbed = await buildRaceDetailEmbed(initialRaceKey, profile, branchKeys);
+        const initialEmbed = buildRaceDetailEmbed(initialRaceKey, eligibilityContext, branchKeys);
         initialEmbed.setTitle(`${formatRaceName(rootKey)} Tree`);
         initialEmbed.setDescription(buildTreeOverview(branchKeys));
 
@@ -95,14 +98,12 @@ module.exports = {
                 });
             }
 
-            await i.deferUpdate();
-
             const selectedKey = i.values[0];
-            const embed = await buildRaceDetailEmbed(selectedKey, profile, branchKeys);
+            const embed = buildRaceDetailEmbed(selectedKey, eligibilityContext, branchKeys);
             embed.setTitle(`${formatRaceName(rootKey)} Tree`);
             embed.setDescription(buildTreeOverview(branchKeys));
 
-            await i.editReply({
+            await i.update({
                 embeds: [embed],
                 components: [row]
             });
@@ -169,7 +170,7 @@ function collectBranchKeys(rootKey) {
     return visited;
 }
 
-async function buildRaceDetailEmbed(ruleKey, profile, branchKeys = null) {
+function buildRaceDetailEmbed(ruleKey, eligibilityContext = null, branchKeys = null) {
     const raceName = fromRuleKey(ruleKey);
     const raceData = RACES[raceName];
     const rule = getEvolutionRule(ruleKey);
@@ -200,8 +201,8 @@ async function buildRaceDetailEmbed(ruleKey, profile, branchKeys = null) {
             { name: 'Branch Races', value: clampField(branchRaces.join(', ')), inline: false }
         );
 
-    if (profile) {
-        const eligibility = await buildEligibilityText(profile, rule);
+    if (eligibilityContext) {
+        const eligibility = buildEligibilityText(eligibilityContext, rule);
         embed.addFields({ name: 'Your Eligibility', value: clampField(eligibility), inline: false });
     }
 
@@ -239,14 +240,14 @@ function formatBaseStats(base) {
     return keys.map(k => `${k}: ${base?.[k] ?? 0}`).join('\n');
 }
 
-async function buildEligibilityText(profile, rule) {
+async function buildEligibilityContext(profileId) {
     const [ownedTitles, ownedSkills] = await Promise.all([
         UserTitles.findAll({
-            where: { profileId: profile.id },
+            where: { profileId },
             include: [{ model: Titles, attributes: ['name'] }]
         }),
         UserSkills.findAll({
-            where: { profileId: profile.id },
+            where: { profileId },
             include: [{ model: Skills, attributes: ['name'] }]
         })
     ]);
@@ -262,6 +263,12 @@ async function buildEligibilityText(profile, rule) {
         skillMap.set(key, Math.max(current, Number(us.level) || 1));
     }
 
+    return { titleSet, skillMap };
+}
+
+function buildEligibilityText(context, rule) {
+    const titleSet = context?.titleSet || new Set();
+    const skillMap = context?.skillMap || new Map();
     const missingTitles = (rule.requiredTitles || [])
         .filter(t => !titleSet.has(normalizeName(t)));
     const missingSkills = (rule.requiredSkills || [])
