@@ -194,6 +194,10 @@ function buildStats(stats) {
 }
 
 function estimateSkillDamage(attackerStats, defenderStats, skill, skillLevel = 1) {
+    if (isEnergyConfermentSkill(skill)) {
+        return 0;
+    }
+
     const effectivePower = (Number(skill?.power) || 0) + ((Math.max(1, Number(skillLevel) || 1) - 1) * 0.1);
     let attackStat = 0;
     let defenseStat = 0;
@@ -216,6 +220,18 @@ function estimateSkillDamage(attackerStats, defenderStats, skill, skillLevel = 1
 }
 
 function buildSkillOptionDescription(attackerStats, defenderStats, skill, skillLevel = 1) {
+    if (isEnergyConfermentSkill(skill)) {
+        const bonus = getEnergyConfermentBonusPct(skill, skillLevel);
+        const parts = ['BUFF'];
+        if (bonus > 0) parts.push(`Magic +${bonus}% (5T)`);
+        const mpCost = Math.max(0, Number(skill?.mp_cost) || 0);
+        const spCost = Math.max(0, Number(skill?.sp_cost) || 0);
+        if (mpCost > 0) parts.push(`MP ${mpCost}`);
+        if (spCost > 0) parts.push(`SP ${spCost}`);
+        const text = parts.join(' | ');
+        return text.length <= 100 ? text : `${text.slice(0, 97)}...`;
+    }
+
     const dmg = estimateSkillDamage(attackerStats, defenderStats, skill, skillLevel);
     const parts = [`~DMG ${dmg}`];
     const mpCost = Math.max(0, Number(skill?.mp_cost) || 0);
@@ -224,6 +240,23 @@ function buildSkillOptionDescription(attackerStats, defenderStats, skill, skillL
     if (spCost > 0) parts.push(`SP ${spCost}`);
     const text = parts.join(' | ');
     return text.length <= 100 ? text : `${text.slice(0, 97)}...`;
+}
+
+function getEnergyConfermentBonusPct(skill, skillLevel = 1) {
+    if (!isEnergyConfermentSkill(skill)) return 0;
+    const effectivePower = (Number(skill?.power) || 0) + ((Math.max(1, Number(skillLevel) || 1) - 1) * 0.1);
+    return Math.max(12, Math.min(80, 18 + Math.floor(effectivePower * 2)));
+}
+
+function isEnergyConfermentSkill(skill) {
+    const raw = String(skill?.name || '').toLowerCase().trim();
+    if (!raw) return false;
+    const normalized = raw
+        .normalize('NFKD')
+        .replace(/[^a-z0-9]/g, '');
+    return normalized.includes('energyconferment')
+        || (normalized.includes('energy') && normalized.includes('conferment'))
+        || (normalized.includes('energy') && normalized.includes('confer'));
 }
 
 async function startArenaFightInChannel({

@@ -261,7 +261,7 @@ async function handleFightAttack(interaction) {
         turnSkillXpSummary = mergeSkillXpSummaries(turnSkillXpSummary, recoveryTurnXp.summary);
 
         if (!isHealPotionAction) {
-            const gainedSkillXp = calculatePveSkillXp({
+            const gainedSkillXpBase = calculatePveSkillXp({
                 uses: result.playerSkillUses || 0,
                 damageDone: result.playerDamageDone || 0,
                 monsterLevel: monster.level || 1,
@@ -269,6 +269,10 @@ async function handleFightAttack(interaction) {
                 rarityXpMultiplier: monster.xpMultiplier || 1,
                 victory: result.victory
             });
+            const gainedSkillXp = Math.min(
+                60,
+                gainedSkillXpBase + getSupportCastSkillXpBonus(combatSkill, result)
+            );
             const skillProgress = await grantSkillXp(profile.id, skill.id, gainedSkillXp);
             turnSkillXpSummary = appendSkillProgress(turnSkillXpSummary, skill, skillProgress);
             const tabooProgress = await grantTabooXpFromSkillUse(
@@ -292,10 +296,17 @@ async function handleFightAttack(interaction) {
             { monsterLevel: monster.level || 1, towerTier: 1, victory: result.victory }
         );
         turnSkillXpSummary = mergeSkillXpSummaries(turnSkillXpSummary, enhancementResult.summary);
+        const combatResistanceResult = await passiveSkillAcquisitionService.grantCombatResistanceXpFromDamageTypes(
+            profile.id,
+            result.directDamageByType?.player,
+            { monsterLevel: monster.level || 1, towerTier: 1, victory: result.victory }
+        );
+        turnSkillXpSummary = mergeSkillXpSummaries(turnSkillXpSummary, combatResistanceResult.summary);
         await passiveSkillAcquisitionService.sendObtainedSkillsEphemeral(interaction, [
             ...passiveSkillAcquisitionService.collectUnlockedSkillsFromSummary(turnSkillXpSummary),
             ...(resistanceResult.unlockedSkills || []),
-            ...(enhancementResult.unlockedSkills || [])
+            ...(enhancementResult.unlockedSkills || []),
+            ...(combatResistanceResult.unlockedSkills || [])
         ]);
 
         const sessionSkillXpSummary = mergeSkillXpSummaries(
@@ -650,7 +661,7 @@ async function handleFightAttack(interaction) {
     turnSkillXpSummary = mergeSkillXpSummaries(turnSkillXpSummary, recoveryTurnXp.summary);
 
     if (!isHealPotionAction) {
-        const gainedSkillXp = calculatePveSkillXp({
+        const gainedSkillXpBase = calculatePveSkillXp({
             uses: result.playerSkillUses || 0,
             damageDone: result.playerDamageDone || 0,
             monsterLevel: monster.level || 1,
@@ -658,6 +669,10 @@ async function handleFightAttack(interaction) {
             rarityXpMultiplier: 1,
             victory: result.victory
         });
+        const gainedSkillXp = Math.min(
+            60,
+            gainedSkillXpBase + getSupportCastSkillXpBonus(combatSkill, result)
+        );
         const skillProgress = await grantSkillXp(profile.id, skill.id, gainedSkillXp);
         turnSkillXpSummary = appendSkillProgress(turnSkillXpSummary, skill, skillProgress);
         const tabooProgress = await grantTabooXpFromSkillUse(
@@ -681,10 +696,17 @@ async function handleFightAttack(interaction) {
         { monsterLevel: monster.level || 1, towerTier: progress.tier || 1, victory: result.victory }
     );
     turnSkillXpSummary = mergeSkillXpSummaries(turnSkillXpSummary, enhancementResult.summary);
+    const combatResistanceResult = await passiveSkillAcquisitionService.grantCombatResistanceXpFromDamageTypes(
+        profile.id,
+        result.directDamageByType?.player,
+        { monsterLevel: monster.level || 1, towerTier: progress.tier || 1, victory: result.victory }
+    );
+    turnSkillXpSummary = mergeSkillXpSummaries(turnSkillXpSummary, combatResistanceResult.summary);
     await passiveSkillAcquisitionService.sendObtainedSkillsEphemeral(interaction, [
         ...passiveSkillAcquisitionService.collectUnlockedSkillsFromSummary(turnSkillXpSummary),
         ...(resistanceResult.unlockedSkills || []),
-        ...(enhancementResult.unlockedSkills || [])
+        ...(enhancementResult.unlockedSkills || []),
+        ...(combatResistanceResult.unlockedSkills || [])
     ]);
 
     const sessionSkillXpSummary = mergeSkillXpSummaries(
@@ -1404,7 +1426,23 @@ function sanitizePotionTurnLog(logLines = [], potionHealAmount = 0) {
     return [`Used Heal Potion -> +${Math.max(0, Number(potionHealAmount) || 0)} HP`, ...filtered];
 }
 
+function getSupportCastSkillXpBonus(skill, result) {
+    if (isEnergyConfermentSkill(skill)) {
+        const uses = Math.max(1, Number(result?.playerSkillUses) || 1);
+        return 14 + (uses * 4);
+    }
+
+    const mainType = String(skill?.effect_type_main || '').toLowerCase().trim();
+    if (mainType !== 'buff') return 0;
+
+    return 6;
+}
+
 function estimateMenuSkillDamage(attackerStats, defenderStats, skill, skillLevel = 1) {
+    if (isEnergyConfermentSkill(skill) || String(skill?.effect_type_main || '').trim() === 'Buff') {
+        return 0;
+    }
+
     const effectivePower = (Number(skill?.power) || 0) + ((Math.max(1, Number(skillLevel) || 1) - 1) * 0.1);
     let attackStat = 0;
     let defenseStat = 0;
@@ -1483,6 +1521,18 @@ async function buildFightActionComponents({ profileId, attackerStats, defenderSt
 }
 
 function buildSkillSelectDescription(damage, skill) {
+    if (isEnergyConfermentSkill(skill) || String(skill?.effect_type_main || '').trim() === 'Buff') {
+        const energyBonus = getEnergyConfermentBonusPct(skill);
+        const mpCost = Number(skill?.mp_cost) || 0;
+        const spCost = Number(skill?.sp_cost) || 0;
+        const parts = ['BUFF'];
+        if (energyBonus > 0) parts.push(`Magic +${energyBonus}% (5T)`);
+        if (mpCost > 0) parts.push(`MP ${mpCost}`);
+        if (spCost > 0) parts.push(`SP ${spCost}`);
+        const text = parts.join(' | ');
+        return text.length <= 100 ? text : `${text.slice(0, 97)}...`;
+    }
+
     const parts = [`~DMG ${damage}`];
     const mpCost = Number(skill?.mp_cost) || 0;
     const spCost = Number(skill?.sp_cost) || 0;
@@ -1491,6 +1541,24 @@ function buildSkillSelectDescription(damage, skill) {
     if (spCost > 0) parts.push(`SP ${spCost}`);
 
     return parts.join(' | ');
+}
+
+function getEnergyConfermentBonusPct(skill) {
+    if (!isEnergyConfermentSkill(skill)) return 0;
+
+    const power = Math.max(0, Number(skill?.power) || 0);
+    return Math.max(12, Math.min(80, 18 + Math.floor(power * 2)));
+}
+
+function isEnergyConfermentSkill(skill) {
+    const raw = String(skill?.name || '').toLowerCase().trim();
+    if (!raw) return false;
+    const normalized = raw
+        .normalize('NFKD')
+        .replace(/[^a-z0-9]/g, '');
+    return normalized.includes('energyconferment')
+        || (normalized.includes('energy') && normalized.includes('conferment'))
+        || (normalized.includes('energy') && normalized.includes('confer'));
 }
 
 function normalizeTerrainType(rawType) {

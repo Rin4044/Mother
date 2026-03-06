@@ -18,6 +18,13 @@ const { progressTutorial } = require('../utils/tutorialService');
 const { getInventoryQuantity } = require('../utils/inventoryService');
 const { getHealPotionLabel } = require('../utils/combatBalanceConfig');
 const MAX_SPAWN_CHANNELS = 25;
+const DISCORD_UNKNOWN_INTERACTION = 10062;
+const DISCORD_ALREADY_ACK = 40060;
+
+function isIgnorableInteractionError(error) {
+    const code = Number(error?.code ?? error?.rawError?.code);
+    return code === DISCORD_UNKNOWN_INTERACTION || code === DISCORD_ALREADY_ACK;
+}
 
 module.exports = {
     name: 'interactionCreate',
@@ -237,7 +244,12 @@ module.exports = {
                 });
             }
 
-            return routeSelectMenu(interaction, client);
+            try {
+                return await routeSelectMenu(interaction, client);
+            } catch (error) {
+                if (isIgnorableInteractionError(error)) return;
+                throw error;
+            }
         }
 
         // =========================
@@ -474,7 +486,8 @@ module.exports = {
                                 [Op.in]: ['Physical', 'Magic', 'Debuff', 'Buff']
                             }
                         }
-                    }]
+                    }],
+                    order: [['equippedSlot', 'ASC']]
                 });
 
                 const playerSkills = userSkills.map(us => us.Skill);
@@ -751,7 +764,12 @@ module.exports = {
             }
 
             // ===== OTHER BUTTONS =====
-            return routeButton(interaction, client);
+            try {
+                return await routeButton(interaction, client);
+            } catch (error) {
+                if (isIgnorableInteractionError(error)) return;
+                throw error;
+            }
         }
 
         // =========================
@@ -1018,6 +1036,10 @@ function buildBar(current, max, width = 10) {
 }
 
 function estimateSkillDamage(attackerStats, defenderStats, skill, skillLevel = 1) {
+    if (isEnergyConfermentSkill(skill) || String(skill?.effect_type_main || '').trim() === 'Buff') {
+        return 0;
+    }
+
     const effectivePower = (Number(skill?.power) || 0) + ((Math.max(1, Number(skillLevel) || 1) - 1) * 0.1);
     let attackStat = 0;
     let defenseStat = 0;
@@ -1029,7 +1051,7 @@ function estimateSkillDamage(attackerStats, defenderStats, skill, skillLevel = 1
         attackStat = Math.max(0, Number(attackerStats?.magic) || 0);
         defenseStat = Math.max(0, Number(defenderStats?.resistance) || 0);
     } else {
-        return 1;
+        return 0;
     }
 
     const multiplier = 1 + (effectivePower * 0.1);
@@ -1039,6 +1061,18 @@ function estimateSkillDamage(attackerStats, defenderStats, skill, skillLevel = 1
 }
 
 function buildSkillSelectDescription(damage, skill) {
+    if (isEnergyConfermentSkill(skill) || String(skill?.effect_type_main || '').trim() === 'Buff') {
+        const parts = ['BUFF'];
+        const energyBonus = getEnergyConfermentBonusPct(skill);
+        if (energyBonus > 0) parts.push(`Magic +${energyBonus}% (5T)`);
+        const mpCost = Number(skill?.mp_cost) || 0;
+        const spCost = Number(skill?.sp_cost) || 0;
+        if (mpCost > 0) parts.push(`MP ${mpCost}`);
+        if (spCost > 0) parts.push(`SP ${spCost}`);
+        const text = parts.join(' | ');
+        return text.length <= 100 ? text : `${text.slice(0, 97)}...`;
+    }
+
     const parts = [`~DMG ${damage}`];
     const mpCost = Number(skill?.mp_cost) || 0;
     const spCost = Number(skill?.sp_cost) || 0;
@@ -1047,6 +1081,24 @@ function buildSkillSelectDescription(damage, skill) {
     if (spCost > 0) parts.push(`SP ${spCost}`);
 
     return parts.join(' | ');
+}
+
+function getEnergyConfermentBonusPct(skill) {
+    if (!isEnergyConfermentSkill(skill)) return 0;
+
+    const power = Math.max(0, Number(skill?.power) || 0);
+    return Math.max(12, Math.min(80, 18 + Math.floor(power * 2)));
+}
+
+function isEnergyConfermentSkill(skill) {
+    const raw = String(skill?.name || '').toLowerCase().trim();
+    if (!raw) return false;
+    const normalized = raw
+        .normalize('NFKD')
+        .replace(/[^a-z0-9]/g, '');
+    return normalized.includes('energyconferment')
+        || (normalized.includes('energy') && normalized.includes('conferment'))
+        || (normalized.includes('energy') && normalized.includes('confer'));
 }
 
 

@@ -122,6 +122,8 @@ function buildStatusModifiersFromSkills(skills = []) {
     const chastity = getLvl('Chastity');
     const wisdom = getLvl('Wisdom');
     const nightVision = getLvl('Night Vision');
+    const magicResistanceSkill = getLvl('Magic Resistance');
+    const physicalResistanceSkill = getLvl('Physical Resistance');
     const scaled = (lvl, base, perLevel, cap) => (
         lvl > 0 ? Math.min(cap, Math.max(0, base + (lvl * perLevel))) : 0
     );
@@ -132,6 +134,12 @@ function buildStatusModifiersFromSkills(skills = []) {
         : 0;
     const critChancePct = Math.min(60, baseCritChancePct + nightVisionCritChancePct);
     const critDamagePct = 50 + (nightVision > 0 ? Math.min(25, Math.floor(nightVision * 1.5)) : 0);
+    const magicDamageReductionPct = magicResistanceSkill > 0
+        ? Math.min(40, 8 + (magicResistanceSkill * 2))
+        : 0;
+    const physicalDamageReductionPct = physicalResistanceSkill > 0
+        ? Math.min(40, 8 + (physicalResistanceSkill * 2))
+        : 0;
 
     const rulerPassives = {
         damageBonusHighHpPct: scaled(pride, 6, 1.5, 28),
@@ -165,7 +173,9 @@ function buildStatusModifiersFromSkills(skills = []) {
         immortalityEnabled: hasImmortality,
         magicDamageBonusPct: scaled(wisdom, 6, 1.7, 30),
         critChancePct,
-        critDamagePct
+        critDamagePct,
+        magicDamageReductionPct,
+        physicalDamageReductionPct
     };
 
     const allStatusBonus = Math.min(60, scaled(humility, 5, 1.2, 25) + scaled(chastity, 7, 1.3, 30));

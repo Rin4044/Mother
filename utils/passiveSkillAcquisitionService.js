@@ -1,6 +1,6 @@
 const { MessageFlags } = require('discord.js');
 const { Op } = require('sequelize');
-const { Profiles, UserSkills, Skills } = require('../database');
+const { Profiles, UserSkills, Skills, sequelize } = require('../database');
 const { grantSkillXp } = require('./skillProgression');
 
 const EXPOSURE_THRESHOLD = {
@@ -295,9 +295,76 @@ async function grantEnhancementXpFromStatusDamage(profileId, statusDamageByType,
     return { summary, unlockedSkills };
 }
 
+function calculateCombatResistanceXp({
+    damageTaken = 0,
+    monsterLevel = 1,
+    towerTier = 1,
+    victory = false
+} = {}) {
+    const safeDamage = Math.max(0, Number(damageTaken) || 0);
+    if (safeDamage <= 0) return 0;
+
+    const safeLevel = Math.max(1, Number(monsterLevel) || 1);
+    const safeTier = Math.max(1, Number(towerTier) || 1);
+    const victoryBonus = victory ? 1 : 0;
+    const raw = (Math.sqrt(safeDamage) * 0.9) + (safeLevel * 0.35) + ((safeTier - 1) * 0.7) + victoryBonus;
+    return Math.max(2, Math.min(30, Math.round(raw)));
+}
+
+async function grantCombatResistanceXpFromDamageTypes(profileId, damageByMainType = {}, context = {}) {
+    const physicalDamage = Math.max(0, Number(damageByMainType?.Physical) || 0);
+    const magicDamage = Math.max(0, Number(damageByMainType?.Magic) || 0);
+    if (physicalDamage <= 0 && magicDamage <= 0) {
+        return { summary: {}, unlockedSkills: [] };
+    }
+
+    const wantedSkillNames = ['Magic Resistance', 'Physical Resistance'];
+    const userSkills = await UserSkills.findAll({
+        where: { profileId },
+        include: [{
+            model: Skills,
+            where: {
+                [Op.or]: wantedSkillNames.map((skillName) =>
+                    sequelize.where(
+                        sequelize.fn('lower', sequelize.col('name')),
+                        String(skillName).toLowerCase()
+                    )
+                )
+            }
+        }]
+    });
+
+    let summary = {};
+    for (const userSkill of userSkills) {
+        const passiveSkill = userSkill.Skill;
+        const lowerName = String(passiveSkill?.name || '').toLowerCase().trim();
+        if (!passiveSkill?.id || !lowerName) continue;
+
+        let triggeredDamage = 0;
+        if (lowerName === 'magic resistance') {
+            triggeredDamage = magicDamage;
+        } else if (lowerName === 'physical resistance') {
+            triggeredDamage = physicalDamage;
+        }
+        if (triggeredDamage <= 0) continue;
+
+        const gainedXp = calculateCombatResistanceXp({
+            damageTaken: triggeredDamage,
+            monsterLevel: context.monsterLevel || 1,
+            towerTier: context.towerTier || 1,
+            victory: !!context.victory
+        });
+        const progress = await grantSkillXp(profileId, passiveSkill.id, gainedXp);
+        summary = appendSkillProgress(summary, passiveSkill, progress);
+    }
+
+    return { summary, unlockedSkills: [] };
+}
+
 module.exports = {
     grantResistanceXpFromStatusDamage,
     grantEnhancementXpFromStatusDamage,
+    grantCombatResistanceXpFromDamageTypes,
     collectUnlockedSkillsFromSummary,
     sendObtainedSkillsEphemeral
 };

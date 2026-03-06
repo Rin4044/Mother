@@ -1,6 +1,6 @@
 const { SlashCommandBuilder, EmbedBuilder, MessageFlags } = require('discord.js');
 const { Op } = require('sequelize');
-const { Profiles, UserSkills, Skills } = require('../../database.js');
+const { Profiles, UserSkills, Skills, sequelize } = require('../../database.js');
 const { progressTutorial } = require('../../utils/tutorialService');
 
 const MAX_EQUIPPED_SKILLS = 5;
@@ -91,12 +91,50 @@ module.exports = {
                 });
             }
 
-            await UserSkills.update(
-                { equippedSlot: null },
-                { where: { profileId: profile.id, equippedSlot: slot } }
-            );
+            const tx = await sequelize.transaction();
+            try {
+                await UserSkills.update(
+                    { equippedSlot: null },
+                    { where: { profileId: profile.id, equippedSlot: slot }, transaction: tx }
+                );
 
-            await userSkill.update({ equippedSlot: slot });
+                await UserSkills.update(
+                    { equippedSlot: null },
+                    { where: { profileId: profile.id, skillId }, transaction: tx }
+                );
+
+                const [updatedCount] = await UserSkills.update(
+                    { equippedSlot: slot },
+                    { where: { profileId: profile.id, skillId }, transaction: tx }
+                );
+
+                if (!updatedCount) {
+                    await tx.rollback();
+                    return interaction.reply({
+                        content: 'Equip failed: could not update this skill slot.',
+                        flags: MessageFlags.Ephemeral
+                    });
+                }
+
+                await tx.commit();
+            } catch (error) {
+                await tx.rollback();
+                console.error('loadout equip transaction error:', error);
+                return interaction.reply({
+                    content: 'Equip failed due to a database error.',
+                    flags: MessageFlags.Ephemeral
+                });
+            }
+
+            const equippedCheck = await UserSkills.findOne({
+                where: { profileId: profile.id, skillId }
+            });
+            if (Number(equippedCheck?.equippedSlot) !== Number(slot)) {
+                return interaction.reply({
+                    content: `Equip failed: **${userSkill.Skill.name}** is not in slot **${slot}** after save.`,
+                    flags: MessageFlags.Ephemeral
+                });
+            }
 
             await progressTutorial(profile.id, 'used_skill_equip');
 
@@ -145,7 +183,7 @@ async function buildLoadoutEmbed(profile, username) {
         order: [['equippedSlot', 'ASC']]
     });
 
-    const bySlot = new Map(equipped.map(us => [us.equippedSlot, us]));
+    const bySlot = new Map(equipped.map(us => [Number(us.equippedSlot), us]));
     const lines = [];
 
     for (let slot = 1; slot <= MAX_EQUIPPED_SKILLS; slot++) {

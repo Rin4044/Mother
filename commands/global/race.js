@@ -18,6 +18,9 @@ const { RACES } = require('../../utils/races');
 const SELECT_CUSTOM_ID = 'racetree_select';
 const SELECT_TIMEOUT_MS = 900000;
 const TREE_ADJACENCY = buildTreeAdjacency();
+const DISCORD_UNKNOWN_INTERACTION = 10062;
+const DISCORD_ALREADY_ACK = 40060;
+const DISCORD_TRANSIENT_HTTP = new Set([502, 503, 504]);
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -91,22 +94,27 @@ module.exports = {
         });
 
         collector.on('collect', async (i) => {
-            if (i.user.id !== interaction.user.id) {
-                return i.reply({
-                    content: 'Not your menu.',
-                    flags: MessageFlags.Ephemeral
+            try {
+                if (i.user.id !== interaction.user.id) {
+                    return i.reply({
+                        content: 'Not your menu.',
+                        flags: MessageFlags.Ephemeral
+                    });
+                }
+
+                const selectedKey = i.values[0];
+                const embed = buildRaceDetailEmbed(selectedKey, eligibilityContext, branchKeys);
+                embed.setTitle(`${formatRaceName(rootKey)} Tree`);
+                embed.setDescription(buildTreeOverview(branchKeys));
+
+                await i.update({
+                    embeds: [embed],
+                    components: [row]
                 });
+            } catch (error) {
+                if (isIgnorableInteractionError(error)) return;
+                console.error('racetree select collector error:', error);
             }
-
-            const selectedKey = i.values[0];
-            const embed = buildRaceDetailEmbed(selectedKey, eligibilityContext, branchKeys);
-            embed.setTitle(`${formatRaceName(rootKey)} Tree`);
-            embed.setDescription(buildTreeOverview(branchKeys));
-
-            await i.update({
-                embeds: [embed],
-                components: [row]
-            });
         });
 
         collector.on('end', async () => {
@@ -305,4 +313,11 @@ function clampField(value, max = 1000) {
     const text = String(value || 'None');
     if (text.length <= max) return text;
     return `${text.slice(0, max - 3)}...`;
+}
+
+function isIgnorableInteractionError(error) {
+    if (!error) return false;
+    if (error.code === DISCORD_UNKNOWN_INTERACTION || error.code === DISCORD_ALREADY_ACK) return true;
+    if (DISCORD_TRANSIENT_HTTP.has(Number(error.status))) return true;
+    return false;
 }

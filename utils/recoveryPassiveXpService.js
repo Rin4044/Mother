@@ -70,7 +70,16 @@ async function grantRecoveryPassiveXpFromTurn({ profileId, userSkills, regenData
         const triggered = targets.some((target) => regen[target] > 0);
         if (!triggered) continue;
 
-        const progress = await grantSkillXp(profileId, skill.id, Math.max(1, Number(xpPerProc) || 2));
+        const progress = await grantSkillXp(
+            profileId,
+            skill.id,
+            calculateRecoveryXpGain({
+                targets,
+                regen,
+                skillName,
+                fallbackXp: xpPerProc
+            })
+        );
         summary = appendSkillProgress(summary, skill, progress);
         if (progress?.unlockedSkill?.id) {
             unlockedSkills.push(progress.unlockedSkill);
@@ -83,3 +92,22 @@ async function grantRecoveryPassiveXpFromTurn({ profileId, userSkills, regenData
 module.exports = {
     grantRecoveryPassiveXpFromTurn
 };
+
+function calculateRecoveryXpGain({ targets = [], regen = {}, skillName = '', fallbackXp = 2 } = {}) {
+    const normalizedTargets = Array.isArray(targets) && targets.length ? targets : ['mp', 'sp'];
+    const totalRecovered = normalizedTargets.reduce((sum, target) => {
+        return sum + Math.max(0, Number(regen?.[target]) || 0);
+    }, 0);
+
+    const activeTargetCount = normalizedTargets.filter((target) => (Number(regen?.[target]) || 0) > 0).length;
+    const hasUltraFastToken = String(skillName || '').toLowerCase().includes('ultra fast recovery');
+    const hasRapidToken = String(skillName || '').toLowerCase().includes('rapid recovery');
+
+    const baselineXp = Math.max(6, Number(fallbackXp) || 2);
+    const recoveryScaleXp = Math.floor(totalRecovered / 40);
+    const multiTargetBonus = Math.max(0, activeTargetCount - 1) * 2;
+    const qualityBonus = hasUltraFastToken ? 4 : (hasRapidToken ? 2 : 0);
+
+    const gained = baselineXp + recoveryScaleXp + multiTargetBonus + qualityBonus;
+    return Math.max(6, Math.min(36, gained));
+}

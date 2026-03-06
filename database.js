@@ -1,4 +1,4 @@
-const { Sequelize } = require('sequelize');
+const { Sequelize, Op } = require('sequelize');
 
 if (!process.env.DATABASE_URL) {
     throw new Error('DATABASE_URL is required. This project is now Postgres-only.');
@@ -107,6 +107,9 @@ async function initDatabase() {
         await ensureBotLogConfigColumns();
         await ensurePlayerGuildColumns();
         await ensureSkillClassifications();
+        await ensureEnergyConfermentSkillClassification();
+        await ensureCoreResistanceSkills();
+        await ensureSpiritElfMagicResistanceGrant();
         await ensureRulerTitleBalance();
         await ensureAchievementTitles();
         console.log('Database synced.');
@@ -480,6 +483,126 @@ async function ensureSkillClassifications() {
             }
         }
     );
+}
+
+async function ensureEnergyConfermentSkillClassification() {
+    const candidates = await Skills.findAll({
+        where: sequelize.where(
+            sequelize.fn('lower', sequelize.col('name')),
+            { [Op.like]: '%energy%confer%' }
+        )
+    });
+
+    for (const skill of candidates) {
+        const nextMain = 'Buff';
+        const nextSpecific = 'Other';
+        const currMain = String(skill.effect_type_main || '').trim();
+        const currSpecific = String(skill.effect_type_specific || '').trim();
+        if (currMain === nextMain && currSpecific === nextSpecific) continue;
+
+        await skill.update({
+            effect_type_main: nextMain,
+            effect_type_specific: nextSpecific
+        });
+    }
+}
+
+async function ensureCoreResistanceSkills() {
+    const definitions = [
+        {
+            name: 'Magic Resistance',
+            type: 'Resistance Skills',
+            effect_type_main: 'Buff',
+            effect_type_specific: 'Other',
+            description: 'Reduces incoming Magic damage. Gains XP when resisting Magic hits.',
+            sp_cost: null,
+            mp_cost: null,
+            cooldown: 0,
+            power: 0,
+            skill_points_cost: 12,
+            tier: 1,
+            parent: null
+        },
+        {
+            name: 'Physical Resistance',
+            type: 'Resistance Skills',
+            effect_type_main: 'Buff',
+            effect_type_specific: 'Other',
+            description: 'Reduces incoming Physical damage. Gains XP when resisting Physical hits.',
+            sp_cost: null,
+            mp_cost: null,
+            cooldown: 0,
+            power: 0,
+            skill_points_cost: 12,
+            tier: 1,
+            parent: null
+        }
+    ];
+
+    for (const def of definitions) {
+        const existing = await Skills.findOne({
+            where: sequelize.where(
+                sequelize.fn('lower', sequelize.col('name')),
+                String(def.name).toLowerCase()
+            )
+        });
+
+        if (!existing) {
+            await Skills.create(def);
+            continue;
+        }
+
+        await existing.update({
+            type: def.type,
+            effect_type_main: def.effect_type_main,
+            effect_type_specific: def.effect_type_specific,
+            description: def.description,
+            sp_cost: def.sp_cost,
+            mp_cost: def.mp_cost,
+            cooldown: def.cooldown,
+            power: def.power,
+            skill_points_cost: def.skill_points_cost,
+            tier: def.tier
+        });
+    }
+}
+
+async function ensureSpiritElfMagicResistanceGrant() {
+    const magicResistanceSkill = await Skills.findOne({
+        where: sequelize.where(
+            sequelize.fn('lower', sequelize.col('name')),
+            'magic resistance'
+        )
+    });
+    if (!magicResistanceSkill) return;
+
+    const spiritElfProfiles = await Profiles.findAll({
+        where: sequelize.where(
+            sequelize.fn('lower', sequelize.col('race')),
+            'spirit elf'
+        ),
+        attributes: ['id']
+    });
+    if (!spiritElfProfiles.length) return;
+
+    for (const profile of spiritElfProfiles) {
+        const existing = await UserSkills.findOne({
+            where: { profileId: profile.id, skillId: magicResistanceSkill.id }
+        });
+        if (!existing) {
+            await UserSkills.create({
+                profileId: profile.id,
+                skillId: magicResistanceSkill.id,
+                level: 2,
+                xp: 0
+            });
+            continue;
+        }
+
+        if ((existing.level || 1) < 2) {
+            await existing.update({ level: 2 });
+        }
+    }
 }
 
 async function ensureRulerTitleBalance() {

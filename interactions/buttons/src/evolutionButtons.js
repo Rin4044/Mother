@@ -21,9 +21,22 @@ const { clearEvolutionLock, isEvolutionActive } = require('../../../commands/glo
 
 const path = require('path');
 const fs = require('fs');
+const SKILL_REQUIREMENT_ALIASES = {
+    resistance: ['Resistance', 'Magic Resistance', 'Heresy Resistance']
+};
 
 function normalizeName(value) {
     return String(value || '').toLowerCase().trim();
+}
+
+function canonicalizeRequiredSkillName(raceKey, skillName) {
+    const race = normalizeName(String(raceKey || '').replace(/_/g, ' '));
+    const name = String(skillName || '').trim();
+    if (!name) return name;
+    if (normalizeName(name) === 'resistance' && race.includes('spirit')) {
+        return 'Magic Resistance';
+    }
+    return name;
 }
 
 function disableButtonRows(components = []) {
@@ -65,13 +78,16 @@ async function getPlayerEvolutionState(profileId) {
     return { titleNameSet, skillLevelMap };
 }
 
-function evaluateEvolutionEligibility(rule, titleNameSet, skillLevelMap) {
+function evaluateEvolutionEligibility(raceKey, rule, titleNameSet, skillLevelMap) {
     const requiredTitles = rule.requiredTitles || [];
-    const requiredSkills = rule.requiredSkills || [];
+    const requiredSkills = (rule.requiredSkills || []).map((req) => ({
+        ...req,
+        name: canonicalizeRequiredSkillName(raceKey, req?.name)
+    }));
 
     const missingTitles = requiredTitles.filter(title => !titleNameSet.has(normalizeName(title)));
     const missingSkills = requiredSkills.filter(req => {
-        const current = skillLevelMap.get(normalizeName(req.name)) || 0;
+        const current = getBestSkillLevelForRequirement(skillLevelMap, req.name);
         return current < (req.level || 1);
     });
 
@@ -80,6 +96,24 @@ function evaluateEvolutionEligibility(rule, titleNameSet, skillLevelMap) {
         missingTitles,
         missingSkills
     };
+}
+
+function getRequiredSkillAliases(skillName) {
+    const raw = String(skillName || '').trim();
+    if (!raw) return [];
+    const normalized = normalizeName(raw);
+    const aliases = SKILL_REQUIREMENT_ALIASES[normalized] || [];
+    return Array.from(new Set([raw, ...aliases]));
+}
+
+function getBestSkillLevelForRequirement(skillLevelMap, skillName) {
+    const aliases = getRequiredSkillAliases(skillName);
+    let best = 0;
+    for (const alias of aliases) {
+        const level = Number(skillLevelMap.get(normalizeName(alias)) || 0);
+        if (level > best) best = level;
+    }
+    return best;
 }
 
 function buildGateMessage(gate) {
@@ -95,10 +129,17 @@ function buildGateMessage(gate) {
 
 async function grantEvolutionSkills(profile, raceKey) {
     const rule = getEvolutionRule(raceKey);
-    const rewards = rule.grantedSkills || [];
+    const rewards = (rule.grantedSkills || []).map((reward) => ({
+        ...reward,
+        name: canonicalizeRequiredSkillName(raceKey, reward?.name)
+    }));
     if (!rewards.length) return [];
 
-    const rewardNames = rewards.map(r => normalizeName(r.name)).filter(Boolean);
+    const rewardCandidates = rewards.map((reward) => ({
+        reward,
+        aliases: getRequiredSkillAliases(reward?.name).map((name) => normalizeName(name)).filter(Boolean)
+    }));
+    const rewardNames = [...new Set(rewardCandidates.flatMap((entry) => entry.aliases))];
     if (!rewardNames.length) return [];
 
     const skillRows = await Skills.findAll({
@@ -115,8 +156,9 @@ async function grantEvolutionSkills(profile, raceKey) {
     const skillByName = new Map(skillRows.map(s => [normalizeName(s.name), s]));
     const granted = [];
 
-    for (const reward of rewards) {
-        const target = skillByName.get(normalizeName(reward.name));
+    for (const entry of rewardCandidates) {
+        const reward = entry.reward;
+        const target = entry.aliases.map((name) => skillByName.get(name)).find(Boolean);
         if (!target) continue;
 
         const targetLevel = reward.level || 1;
@@ -210,6 +252,7 @@ async function confirmEvolution(interaction, userId, raceKey) {
 
     const playerState = await getPlayerEvolutionState(profile.id);
     const gate = evaluateEvolutionEligibility(
+        raceKey,
         getEvolutionRule(raceKey),
         playerState.titleNameSet,
         playerState.skillLevelMap
@@ -264,13 +307,15 @@ async function previewEvolution(interaction, userId, raceKey) {
 
     const playerState = await getPlayerEvolutionState(profile.id);
     const rule = getEvolutionRule(raceKey);
-    const gate = evaluateEvolutionEligibility(rule, playerState.titleNameSet, playerState.skillLevelMap);
+    const gate = evaluateEvolutionEligibility(raceKey, rule, playerState.titleNameSet, playerState.skillLevelMap);
 
     const requiredTitles = (rule.requiredTitles || []).join(', ') || 'None';
     const requiredSkills = (rule.requiredSkills || [])
+        .map((s) => ({ ...s, name: canonicalizeRequiredSkillName(raceKey, s?.name) }))
         .map(s => `${s.name} Lv${s.level || 1}`)
         .join(', ') || 'None';
     const rewards = (rule.grantedSkills || [])
+        .map((s) => ({ ...s, name: canonicalizeRequiredSkillName(raceKey, s?.name) }))
         .map(s => `${s.name} Lv${s.level || 1}`)
         .join(', ') || 'None';
 

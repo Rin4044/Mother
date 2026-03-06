@@ -141,7 +141,8 @@ async function handleFightStart(interaction) {
                     [Op.in]: ['Physical', 'Magic', 'Debuff', 'Buff']
                 }
             }
-        }
+        },
+        order: [['equippedSlot', 'ASC']]
     });
 
     if (!userSkills.length) {
@@ -291,6 +292,10 @@ function buildBar(current, max, width = 10) {
 }
 
 function estimateSkillDamage(attackerStats, defenderStats, skill, skillLevel = 1) {
+    if (isEnergyConfermentSkill(skill)) {
+        return 0;
+    }
+
     const effectivePower = (Number(skill?.power) || 0) + ((Math.max(1, Number(skillLevel) || 1) - 1) * 0.1);
     let attackStat = 0;
     let defenseStat = 0;
@@ -356,6 +361,18 @@ function getGuaranteedEvilEyeBonus(attackerStats, defenderStats, skill) {
 }
 
 function buildSkillOptionDescription(attackerStats, defenderStats, skill, skillLevel = 1) {
+    if (isEnergyConfermentSkill(skill) || String(skill?.effect_type_main || '').trim() === 'Buff') {
+        const energyBonus = getEnergyConfermentBonusPct(skill, skillLevel);
+        const mpCost = Math.max(0, Number(skill?.mp_cost) || 0);
+        const spCost = Math.max(0, Number(skill?.sp_cost) || 0);
+        const parts = ['BUFF'];
+        if (energyBonus > 0) parts.push(`Magic +${energyBonus}% (5T)`);
+        if (mpCost > 0) parts.push(`MP ${mpCost}`);
+        if (spCost > 0) parts.push(`SP ${spCost}`);
+        const text = parts.join(' | ');
+        return text.length <= 100 ? text : text.slice(0, 97) + '...';
+    }
+
     const base = estimateSkillDamage(attackerStats, defenderStats, skill, skillLevel);
     const evilEye = getGuaranteedEvilEyeBonus(attackerStats, defenderStats, skill);
     const total = base + evilEye.bonus;
@@ -369,4 +386,22 @@ function buildSkillOptionDescription(attackerStats, defenderStats, skill, skillL
 
     const text = parts.join(' | ');
     return text.length <= 100 ? text : text.slice(0, 97) + '...';
+}
+
+function getEnergyConfermentBonusPct(skill, skillLevel = 1) {
+    if (!isEnergyConfermentSkill(skill)) return 0;
+
+    const effectivePower = (Number(skill?.power) || 0) + ((Math.max(1, Number(skillLevel) || 1) - 1) * 0.1);
+    return Math.max(12, Math.min(80, 18 + Math.floor(effectivePower * 2)));
+}
+
+function isEnergyConfermentSkill(skill) {
+    const raw = String(skill?.name || '').toLowerCase().trim();
+    if (!raw) return false;
+    const normalized = raw
+        .normalize('NFKD')
+        .replace(/[^a-z0-9]/g, '');
+    return normalized.includes('energyconferment')
+        || (normalized.includes('energy') && normalized.includes('conferment'))
+        || (normalized.includes('energy') && normalized.includes('confer'));
 }

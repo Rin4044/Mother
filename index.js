@@ -6,6 +6,8 @@ const http = require('http');
 const { Profiles } = require('./database.js');
 const { updateAllGuildStatuses, sendCrashReport } = require('./utils/botLogService');
 const { assertOwnerOnly, assertWhitelistedAdmin } = require('./utils/adminAccessService');
+const DISCORD_UNKNOWN_INTERACTION = 10062;
+const DISCORD_ALREADY_ACK = 40060;
 
 const WHITELIST_REQUIRED_COMMANDS = new Set([
     'resetdata',
@@ -111,6 +113,12 @@ function normalizeError(value) {
     }
 }
 
+function isIgnorableInteractionError(error) {
+    const code = Number(error?.code ?? error?.rawError?.code);
+    if (code === DISCORD_UNKNOWN_INTERACTION || code === DISCORD_ALREADY_ACK) return true;
+    return false;
+}
+
 async function handleFatalExit(context, rawError) {
     if (fatalExitInProgress) {
         return;
@@ -136,6 +144,9 @@ async function handleFatalExit(context, rawError) {
 }
 
 process.on('unhandledRejection', (reason) => {
+    if (isIgnorableInteractionError(reason)) {
+        return;
+    }
     const error = normalizeError(reason);
     console.error('Unhandled promise rejection:', error);
     sendCrashReport(client, error, 'unhandledRejection').catch((reportError) => {
@@ -148,10 +159,16 @@ process.on('uncaughtException', (error) => {
 });
 
 client.on('error', (error) => {
+    if (isIgnorableInteractionError(error)) {
+        return;
+    }
     console.error('Discord client error:', error);
 });
 
 client.on('shardError', (error, shardId) => {
+    if (isIgnorableInteractionError(error)) {
+        return;
+    }
     console.error(`Discord shard ${shardId} error:`, error);
 });
 
@@ -286,6 +303,10 @@ client.on('interactionCreate', async (interaction) => {
     try {
         await command.execute(interaction);
     } catch (error) {
+        if (isIgnorableInteractionError(error)) {
+            return;
+        }
+
         console.error('Error executing command:', error);
         try {
             if (interaction.deferred) {
@@ -304,6 +325,9 @@ client.on('interactionCreate', async (interaction) => {
                 });
             }
         } catch (replyError) {
+            if (isIgnorableInteractionError(replyError)) {
+                return;
+            }
             console.error('Failed to send interaction error response:', replyError);
         }
     }

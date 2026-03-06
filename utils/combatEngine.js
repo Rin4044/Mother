@@ -4,6 +4,7 @@
 
 const { IMMORTALITY_CONFIG } = require('./combatPassiveConfig');
 const { isAbyssAttack } = require('./abyssSkill');
+const ENERGY_CONFERMENT_EFFECT_TYPE = 'EnergyConfermentMagic';
 
 function calculateScaling(monster, tier, stage) {
 
@@ -118,6 +119,56 @@ function hasEffect(entity, effectType) {
     return effects.some((effect) => String(effect?.type || '').trim().toLowerCase() === wanted);
 }
 
+function isEnergyConfermentSkill(skill) {
+    const raw = String(skill?.name || '').toLowerCase().trim();
+    if (!raw) return false;
+    const normalized = raw
+        .normalize('NFKD')
+        .replace(/[^a-z0-9]/g, '');
+    return normalized.includes('energyconferment')
+        || (normalized.includes('energy') && normalized.includes('conferment'))
+        || (normalized.includes('energy') && normalized.includes('confer'));
+}
+
+function applyEnergyConfermentBuff(entity, skill) {
+    if (!entity) return { applied: false, bonusPct: 0, duration: 0 };
+    if (!Array.isArray(entity.effects)) entity.effects = [];
+
+    const power = Math.max(0, Number(skill?.power) || 0);
+    const bonusPct = Math.max(12, Math.min(80, 18 + Math.floor(power * 2)));
+    const duration = 5;
+
+    const existing = entity.effects.find((effect) =>
+        String(effect?.type || '').toLowerCase() === ENERGY_CONFERMENT_EFFECT_TYPE.toLowerCase()
+    );
+
+    if (existing) {
+        existing.duration = Math.max(Number(existing.duration) || 0, duration);
+        existing.magicBonusPct = Math.max(Number(existing.magicBonusPct) || 0, bonusPct);
+        existing.damage = 0;
+        return { applied: true, bonusPct: existing.magicBonusPct, duration: existing.duration };
+    }
+
+    entity.effects.push({
+        type: ENERGY_CONFERMENT_EFFECT_TYPE,
+        duration,
+        damage: 0,
+        magicBonusPct: bonusPct,
+        justApplied: true
+    });
+
+    return { applied: true, bonusPct, duration };
+}
+
+function getEnergyConfermentMagicBonusPct(entity) {
+    const effects = Array.isArray(entity?.effects) ? entity.effects : [];
+    const effect = effects.find((entry) =>
+        String(entry?.type || '').toLowerCase() === ENERGY_CONFERMENT_EFFECT_TYPE.toLowerCase()
+    );
+    if (!effect) return 0;
+    return Math.max(0, Math.min(120, Number(effect.magicBonusPct) || 0));
+}
+
 function tryTriggerImmortality(entity, log = null, isEnemy = false) {
     const enabled = !!entity?.rulerPassives?.immortalityEnabled;
     if (!enabled) return false;
@@ -155,6 +206,13 @@ function tryTriggerImmortality(entity, log = null, isEnemy = false) {
 // ===============================
 
 function calculateDamage(attacker, defender, skill) {
+    if (isEnergyConfermentSkill(skill)) {
+        return {
+            damage: 0,
+            isCrit: false,
+            critMultiplier: 1
+        };
+    }
 
     let attackStat = 0;
     let defenseStat = 0;
@@ -195,6 +253,7 @@ function calculateDamage(attacker, defender, skill) {
     }
     if (skill.effect_type_main === 'Magic') {
         outgoingBonusPct += Math.max(0, Number(attackerPassives.magicDamageBonusPct) || 0);
+        outgoingBonusPct += getEnergyConfermentMagicBonusPct(attacker);
     }
     if (outgoingBonusPct > 0) {
         rawDamage *= 1 + (outgoingBonusPct / 100);
@@ -284,6 +343,7 @@ function applyIncomingDamage(target, rawDamage, options = {}) {
     if (damage <= 0) return 0;
     const ignoreMitigation = !!options.ignoreMitigation;
     const ignoreShield = !!options.ignoreShield;
+    const damageType = String(options.damageType || '').trim();
 
     const passives = target?.rulerPassives || {};
     const hpRatio = getHpRatio(target);
@@ -291,6 +351,11 @@ function applyIncomingDamage(target, rawDamage, options = {}) {
 
     if (!ignoreMitigation) {
         reductionPct = Math.max(0, Number(passives.baseDamageReductionPct) || 0);
+        if (damageType === 'Magic') {
+            reductionPct += Math.max(0, Number(passives.magicDamageReductionPct) || 0);
+        } else if (damageType === 'Physical') {
+            reductionPct += Math.max(0, Number(passives.physicalDamageReductionPct) || 0);
+        }
 
         if (hpRatio <= 0.35) {
             reductionPct += Math.max(0, Number(passives.lowHpDamageReductionPct) || 0);
@@ -360,6 +425,18 @@ function startCombat({ attackerStats, defenderStats, attackerCombat, defenderCom
         };
     }
 
+    if (isEnergyConfermentSkill(skill)) {
+        applyEnergyConfermentBuff(updatedAttacker, skill);
+        return {
+            totalDamage: 0,
+            skillUsed: true,
+            isCrit: false,
+            critMultiplier: 1,
+            updatedAttacker,
+            updatedDefender: { ...defenderCombat }
+        };
+    }
+
     const damageResult = calculateDamage(attackerStats, defenderStats, skill);
     ensureCombatRuntimeState(updatedAttacker);
 
@@ -372,7 +449,8 @@ function startCombat({ attackerStats, defenderStats, attackerCombat, defenderCom
     const abyssAttack = isAbyssAttack(skill);
     const finalDamage = applyIncomingDamage(updatedDefender, damageResult.damage, {
         ignoreMitigation: abyssAttack,
-        ignoreShield: abyssAttack
+        ignoreShield: abyssAttack,
+        damageType: skill.effect_type_main
     });
     applyEvilEyeSpecialEffect(skill, updatedAttacker, updatedDefender, null);
 
@@ -529,6 +607,10 @@ function executeTurn(state, skillA, skillPoolB) {
         player: { hpGain: 0, mpGain: 0, spGain: 0 },
         enemy: { hpGain: 0, mpGain: 0, spGain: 0 }
     };
+    const directDamageByType = {
+        player: { Physical: 0, Magic: 0 },
+        enemy: { Physical: 0, Magic: 0 }
+    };
     ensureCombatRuntimeState(state.entityA);
     ensureCombatRuntimeState(state.entityB);
     const { aTurns, bTurns } =
@@ -540,18 +622,33 @@ function executeTurn(state, skillA, skillPoolB) {
 
         consumeMp(state.entityA, skillA.mp_cost || 0);
         if (applyVitalDeath(state.entityA) && !tryTriggerImmortality(state.entityA, log, false))
-            return { victory: false, defeat: true, log, state, playerSkillUses, playerDamageDone, statusDamageTaken, endTurnRegen };
+            return { victory: false, defeat: true, log, state, playerSkillUses, playerDamageDone, statusDamageTaken, endTurnRegen, directDamageByType };
 
         consumeStaminaWithVital(state.entityA, skillA.sp_cost || 0);
         if (applyVitalDeath(state.entityA) && !tryTriggerImmortality(state.entityA, log, false))
-            return { victory: false, defeat: true, log, state, playerSkillUses, playerDamageDone, statusDamageTaken, endTurnRegen };
+            return { victory: false, defeat: true, log, state, playerSkillUses, playerDamageDone, statusDamageTaken, endTurnRegen, directDamageByType };
+
+        if (isEnergyConfermentSkill(skillA) || String(skillA?.effect_type_main || '').trim() === 'Buff') {
+            playerSkillUses++;
+            if (isEnergyConfermentSkill(skillA)) {
+                const confer = applyEnergyConfermentBuff(state.entityA, skillA);
+                log.push(`Used ${skillA.name} -> Magic damage increased by ${confer.bonusPct}% for ${confer.duration} turns`);
+            } else {
+                log.push(`Used ${skillA.name} -> Buff applied`);
+            }
+            continue;
+        }
 
         const damageResult = calculateDamage(state.entityA, state.entityB, skillA);
         const abyssAttack = isAbyssAttack(skillA);
         const finalDamage = applyIncomingDamage(state.entityB, damageResult.damage, {
             ignoreMitigation: abyssAttack,
-            ignoreShield: abyssAttack
+            ignoreShield: abyssAttack,
+            damageType: skillA.effect_type_main
         });
+        if (skillA.effect_type_main === 'Physical' || skillA.effect_type_main === 'Magic') {
+            directDamageByType.enemy[skillA.effect_type_main] += finalDamage;
+        }
         playerSkillUses++;
         playerDamageDone += finalDamage;
 
@@ -567,7 +664,7 @@ function executeTurn(state, skillA, skillPoolB) {
         applyEvilEyeSpecialEffect(skillA, state.entityA, state.entityB, log);
 
         if (state.entityB.hp <= 0 && !tryTriggerImmortality(state.entityB, log, true))
-            return { victory: true, defeat: false, log, state, playerSkillUses, playerDamageDone, statusDamageTaken, endTurnRegen };
+            return { victory: true, defeat: false, log, state, playerSkillUses, playerDamageDone, statusDamageTaken, endTurnRegen, directDamageByType };
     }
 
     // ===== ENTITY B =====
@@ -578,18 +675,22 @@ function executeTurn(state, skillA, skillPoolB) {
 
         consumeMp(state.entityB, skillB.mp_cost || 0);
         if (applyVitalDeath(state.entityB) && !tryTriggerImmortality(state.entityB, log, true))
-            return { victory: true, defeat: false, log, state, playerSkillUses, playerDamageDone, statusDamageTaken, endTurnRegen };
+            return { victory: true, defeat: false, log, state, playerSkillUses, playerDamageDone, statusDamageTaken, endTurnRegen, directDamageByType };
 
         consumeStaminaWithVital(state.entityB, skillB.sp_cost || 0);
         if (applyVitalDeath(state.entityB) && !tryTriggerImmortality(state.entityB, log, true))
-            return { victory: true, defeat: false, log, state, playerSkillUses, playerDamageDone, statusDamageTaken, endTurnRegen };
+            return { victory: true, defeat: false, log, state, playerSkillUses, playerDamageDone, statusDamageTaken, endTurnRegen, directDamageByType };
 
         const damageResult = calculateDamage(state.entityB, state.entityA, skillB);
         const abyssAttack = isAbyssAttack(skillB);
         const finalDamage = applyIncomingDamage(state.entityA, damageResult.damage, {
             ignoreMitigation: abyssAttack,
-            ignoreShield: abyssAttack
+            ignoreShield: abyssAttack,
+            damageType: skillB.effect_type_main
         });
+        if (skillB.effect_type_main === 'Physical' || skillB.effect_type_main === 'Magic') {
+            directDamageByType.player[skillB.effect_type_main] += finalDamage;
+        }
 
         const critSuffix = damageResult.isCrit
             ? ` (CRIT x${damageResult.critMultiplier.toFixed(2)})`
@@ -603,16 +704,16 @@ function executeTurn(state, skillA, skillPoolB) {
         applyEvilEyeSpecialEffect(skillB, state.entityB, state.entityA, log, true);
 
         if (state.entityA.hp <= 0 && !tryTriggerImmortality(state.entityA, log, false))
-            return { victory: false, defeat: true, log, state, playerSkillUses, playerDamageDone, statusDamageTaken, endTurnRegen };
+            return { victory: false, defeat: true, log, state, playerSkillUses, playerDamageDone, statusDamageTaken, endTurnRegen, directDamageByType };
     }
 
     processStatusDamage(state.entityA, 'Player', log, statusDamageTaken.player);
     if (state.entityA.hp <= 0 && !tryTriggerImmortality(state.entityA, log, false))
-        return { victory: false, defeat: true, log, state, playerSkillUses, playerDamageDone, statusDamageTaken, endTurnRegen };
+        return { victory: false, defeat: true, log, state, playerSkillUses, playerDamageDone, statusDamageTaken, endTurnRegen, directDamageByType };
 
     processStatusDamage(state.entityB, 'Enemy', log, statusDamageTaken.enemy);
     if (state.entityB.hp <= 0 && !tryTriggerImmortality(state.entityB, log, true))
-        return { victory: true, defeat: false, log, state, playerSkillUses, playerDamageDone, statusDamageTaken, endTurnRegen };
+        return { victory: true, defeat: false, log, state, playerSkillUses, playerDamageDone, statusDamageTaken, endTurnRegen, directDamageByType };
 
     endTurnRegen.player = applyEndTurnRulerRegen(state.entityA, log, false);
     endTurnRegen.enemy = applyEndTurnRulerRegen(state.entityB, log, true);
@@ -625,7 +726,8 @@ function executeTurn(state, skillA, skillPoolB) {
         playerSkillUses,
         playerDamageDone,
         statusDamageTaken,
-        endTurnRegen
+        endTurnRegen,
+        directDamageByType
     };
 }
 

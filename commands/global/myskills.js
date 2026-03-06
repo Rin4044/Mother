@@ -20,7 +20,7 @@ module.exports = {
         const profile = await Profiles.findOne({ where: { userId } });
 
         if (!profile) {
-            return interaction.reply({
+            return sendInteractionMessage(interaction, {
                 content: 'You are not registered. Use /start.',
                 flags: MessageFlags.Ephemeral
             });
@@ -32,7 +32,7 @@ module.exports = {
         });
 
         if (!userSkills.length) {
-            return interaction.reply({
+            return sendInteractionMessage(interaction, {
                 content: 'You have no skills.',
                 flags: MessageFlags.Ephemeral
             });
@@ -105,7 +105,7 @@ module.exports = {
             return [row1, row2];
         };
 
-        await interaction.reply({
+        await sendInteractionMessage(interaction, {
             embeds: [generateEmbed()],
             components: generateComponents()
         });
@@ -160,3 +160,13 @@ module.exports = {
         });
     }
 };
+
+async function sendInteractionMessage(interaction, payload) {
+    if (interaction.deferred) {
+        return interaction.editReply(payload);
+    }
+    if (interaction.replied) {
+        return interaction.followUp(payload);
+    }
+    return interaction.reply(payload);
+}

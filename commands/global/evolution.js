@@ -1,4 +1,5 @@
 const { SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, EmbedBuilder, ButtonStyle, MessageFlags } = require('discord.js');
+const { Op } = require('sequelize');
 
 const { Profiles, UserTitles, Titles, UserSkills, Skills } = require('../../database.js');
 const { EVOLUTION_TREE, formatRaceName, getMaxLevelForRace, getEvolutionRule } = require('../../utils/evolutionConfig');
@@ -6,6 +7,9 @@ const { EVOLUTION_TREE, formatRaceName, getMaxLevelForRace, getEvolutionRule } =
 const activeEvolutions = new Set();
 const evolutionSessions = new Map();
 const EVOLUTION_TIMEOUT_MS = 30_000;
+const SKILL_REQUIREMENT_ALIASES = {
+    resistance: ['Resistance', 'Magic Resistance', 'Heresy Resistance']
+};
 
 function buildDisabledComponents(components = []) {
     return components.map(row => {
@@ -85,13 +89,26 @@ function normalizeName(value) {
     return String(value || '').toLowerCase().trim();
 }
 
-function evaluateEvolutionEligibility(rule, titleNameSet, skillLevelMap) {
+function canonicalizeRequiredSkillName(raceKey, skillName) {
+    const race = normalizeName(String(raceKey || '').replace(/_/g, ' '));
+    const name = String(skillName || '').trim();
+    if (!name) return name;
+    if (normalizeName(name) === 'resistance' && race.includes('spirit')) {
+        return 'Magic Resistance';
+    }
+    return name;
+}
+
+function evaluateEvolutionEligibility(raceKey, rule, titleNameSet, skillLevelMap) {
     const requiredTitles = rule.requiredTitles || [];
-    const requiredSkills = rule.requiredSkills || [];
+    const requiredSkills = (rule.requiredSkills || []).map((req) => ({
+        ...req,
+        name: canonicalizeRequiredSkillName(raceKey, req?.name)
+    }));
 
     const missingTitles = requiredTitles.filter(title => !titleNameSet.has(normalizeName(title)));
     const missingSkills = requiredSkills.filter(req => {
-        const current = skillLevelMap.get(normalizeName(req.name)) || 0;
+        const current = getBestSkillLevelForRequirement(skillLevelMap, req.name);
         return current < (req.level || 1);
     });
 
@@ -100,6 +117,83 @@ function evaluateEvolutionEligibility(rule, titleNameSet, skillLevelMap) {
         missingTitles,
         missingSkills
     };
+}
+
+function getRequiredSkillAliases(skillName) {
+    const raw = String(skillName || '').trim();
+    if (!raw) return [];
+    const normalized = normalizeName(raw);
+    const aliases = SKILL_REQUIREMENT_ALIASES[normalized] || [];
+    return Array.from(new Set([raw, ...aliases]));
+}
+
+function getBestSkillLevelForRequirement(skillLevelMap, skillName) {
+    const aliases = getRequiredSkillAliases(skillName);
+    let best = 0;
+    for (const alias of aliases) {
+        const level = Number(skillLevelMap.get(normalizeName(alias)) || 0);
+        if (level > best) best = level;
+    }
+    return best;
+}
+
+async function syncCurrentRaceGrantedSkills(profile) {
+    if (!profile?.id || !profile?.race) return;
+
+    const raceKey = String(profile.race).toLowerCase().trim().replace(/\s+/g, '_');
+    const rewards = getEvolutionRule(raceKey)?.grantedSkills || [];
+    if (!rewards.length) return;
+
+    const wantedNames = new Set();
+    const rewardCandidates = rewards.map((reward) => {
+        const aliases = getRequiredSkillAliases(reward?.name);
+        aliases.forEach((name) => wantedNames.add(normalizeName(name)));
+        return {
+            reward,
+            aliases: aliases.map((name) => normalizeName(name)).filter(Boolean)
+        };
+    });
+
+    if (!wantedNames.size) return;
+
+    const skillRows = await Skills.findAll({
+        where: {
+            [Op.or]: [...wantedNames].map((name) => ({
+                [Op.and]: [
+                    {
+                        name: {
+                            [Op.iLike]: name
+                        }
+                    }
+                ]
+            }))
+        }
+    });
+
+    const byName = new Map(skillRows.map((row) => [normalizeName(row.name), row]));
+
+    for (const entry of rewardCandidates) {
+        const targetLevel = Math.max(1, Number(entry.reward?.level) || 1);
+        const targetSkill = entry.aliases.map((name) => byName.get(name)).find(Boolean);
+        if (!targetSkill?.id) continue;
+
+        const existing = await UserSkills.findOne({
+            where: { profileId: profile.id, skillId: targetSkill.id }
+        });
+        if (!existing) {
+            await UserSkills.create({
+                profileId: profile.id,
+                skillId: targetSkill.id,
+                level: targetLevel,
+                xp: 0
+            });
+            continue;
+        }
+
+        if ((existing.level || 1) < targetLevel) {
+            await existing.update({ level: targetLevel });
+        }
+    }
 }
 
 module.exports = {
@@ -134,6 +228,8 @@ module.exports = {
                 flags: MessageFlags.Ephemeral
             });
         }
+
+        await syncCurrentRaceGrantedSkills(profile);
 
         const maxLevel = getMaxLevelForRace(profile.race);
         const currentLevel = Number(profile.level) || 0;
@@ -192,7 +288,7 @@ module.exports = {
 
         evolutions.forEach(raceKey => {
             const rule = getEvolutionRule(raceKey);
-            const gate = evaluateEvolutionEligibility(rule, titleNameSet, skillLevelMap);
+            const gate = evaluateEvolutionEligibility(raceKey, rule, titleNameSet, skillLevelMap);
 
             const reasons = [];
             if (gate.missingTitles.length) {

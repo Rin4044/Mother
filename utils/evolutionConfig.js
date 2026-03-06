@@ -127,7 +127,6 @@ const MAX_LEVEL_BY_RACE = {
     'warborn human': 30,
     'runic human': 30,
     'sacred human': 30,
-    'high elf': 10,
     'transcendent human': 50,
     'mythic blademaster': 50,
     'astral human': 50,
@@ -140,7 +139,6 @@ const MAX_LEVEL_BY_RACE = {
     'solar arch elf': 50,
     'astral arch elf': 50,
     'void elf': 50,
-    'greater demon': 30,
     'arch demon': 30,
     'calamity oni': 30,
     'night succubus': 30,
@@ -477,7 +475,7 @@ const EVOLUTION_RULES = {
         ],
         grantedSkills: [
             { name: 'MP Recovery Speed', level: 4 },
-            { name: 'Resistance', level: 2 },
+            { name: 'Magic Resistance', level: 2 },
             { name: 'Detection', level: 2 }
         ]
     },
@@ -485,13 +483,13 @@ const EVOLUTION_RULES = {
         requiredTitles: [],
         requiredSkills: [
             { name: 'MP Recovery Speed', level: 8 },
-            { name: 'Resistance', level: 6 },
+            { name: 'Magic Resistance', level: 6 },
             { name: 'Magic Attack', level: 6 },
             { name: 'Energy Conferment', level: 2 }
         ],
         grantedSkills: [
             { name: 'MP Recovery Speed', level: 8 },
-            { name: 'Resistance', level: 7 },
+            { name: 'Magic Resistance', level: 7 },
             { name: 'Magic Attack', level: 7 },
             { name: 'Energy Conferment', level: 3 }
         ]
@@ -500,13 +498,13 @@ const EVOLUTION_RULES = {
         requiredTitles: [],
         requiredSkills: [
             { name: 'MP Recovery Speed', level: 10 },
-            { name: 'Resistance', level: 9 },
+            { name: 'Magic Resistance', level: 9 },
             { name: 'Magic Attack', level: 9 },
             { name: 'Energy Conferment', level: 5 }
         ],
         grantedSkills: [
             { name: 'MP Recovery Speed', level: 10 },
-            { name: 'Resistance', level: 10 },
+            { name: 'Magic Resistance', level: 10 },
             { name: 'Magic Attack', level: 10 },
             { name: 'Energy Conferment', level: 6 },
             { name: 'Detection', level: 6 }
