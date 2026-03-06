@@ -1,23 +1,12 @@
 const { SlashCommandBuilder, MessageFlags } = require('discord.js');
 const { Profiles } = require('../../database.js');
 const { RACES } = require('../../utils/races'); // Ton config race central
+const { RACE_CONFIG } = require('../../utils/evolutionConfig');
 
-const raceRoles = {
-    'small lesser taratect': '1279130327100428369',
-    'small taratect': '1279130393488130131',
-    'lesser taratect': '1279130394897154080',
-    'taratect': '1279130391642636409',
-    'greater taratect': '1279127193225658449',
-    'arch taratect': '1279127295986237461',
-    'queen taratect': '1280561084717207573',
-    'small poison taratect': '1279130390002667602',
-    'poison taratect': '1279127140515708938',
-    'orthocadinaht': '1280561373280993360',
-    'zoa ele': '1280561370038796360',
-    'ede saine': '1280561080191549513',
-    'zana horowa': '1280561086919217193',
-    'arachne': '1280561085476376658'
-};
+function resolveRaceRoleId(raceName) {
+    const key = String(raceName || '').toLowerCase().trim().replace(/\s+/g, '_');
+    return RACE_CONFIG[key]?.role || null;
+}
 
 module.exports = {
 
@@ -33,12 +22,19 @@ module.exports = {
             o.setName('newrace')
                 .setDescription('New race')
                 .setRequired(true)
-                .addChoices(
-                    ...Object.keys(raceRoles).map(r => ({
-                        name: r,
-                        value: r
-                    }))
-                )),
+                .setAutocomplete(true)),
+
+    async autocomplete(interaction) {
+        const focused = String(interaction.options.getFocused() || '').toLowerCase().trim();
+        const races = Object.keys(RACES);
+
+        const matches = races
+            .filter((race) => race.toLowerCase().includes(focused))
+            .slice(0, 25)
+            .map((race) => ({ name: race, value: race }));
+
+        return interaction.respond(matches);
+    },
 
     async execute(interaction) {
 
@@ -72,8 +68,8 @@ module.exports = {
             });
         }
 
-        const oldRoleId = raceRoles[oldRace];
-        const newRoleId = raceRoles[newRace];
+        const oldRoleId = resolveRaceRoleId(oldRace);
+        const newRoleId = resolveRaceRoleId(newRace);
 
         try {
 

@@ -1127,6 +1127,10 @@ function calculateTowerXpGain(monster, progress) {
 function parseMonsterQueue(rawQueue) {
     if (!rawQueue) return null;
 
+    if (Array.isArray(rawQueue)) {
+        return rawQueue;
+    }
+
     try {
         let parsed = JSON.parse(rawQueue);
         if (typeof parsed === 'string') {

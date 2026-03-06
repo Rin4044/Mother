@@ -25,7 +25,7 @@ module.exports = {
 
     async execute(interaction) {
 
-        const transaction = await sequelize.transaction();
+        let transaction = null;
 
         try {
 
@@ -62,6 +62,8 @@ module.exports = {
 
             if (!selected)
                 return interaction.reply({ content: 'Invalid character.', flags: MessageFlags.Ephemeral });
+
+            transaction = await sequelize.transaction();
 
             const profile = await Profiles.create({
                 userId: user.id,
@@ -111,7 +113,7 @@ module.exports = {
 
         } catch (error) {
 
-            await transaction.rollback();
+            if (transaction) await transaction.rollback();
             console.error(error);
 
             return interaction.reply({

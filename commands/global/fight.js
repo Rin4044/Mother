@@ -278,7 +278,7 @@ async function generateMonsterQueue(progress) {
     }
 
     await progress.update({
-        monsterQueue: JSON.stringify(queue)
+        monsterQueue: queue
     });
 
     return true;
@@ -286,6 +286,10 @@ async function generateMonsterQueue(progress) {
 
 function parseMonsterQueue(rawQueue) {
     if (!rawQueue) return null;
+
+    if (Array.isArray(rawQueue)) {
+        return rawQueue;
+    }
 
     try {
         let parsed = JSON.parse(rawQueue);

@@ -55,8 +55,7 @@ module.exports = {
         .addStringOption(o => o.setName('description').setDescription('Skill description').setRequired(false)),
 
     async execute(interaction) {
-
-        const transaction = await sequelize.transaction();
+        let transaction = null;
 
         try {
 
@@ -101,6 +100,8 @@ module.exports = {
             // CREATE SKILL
             // ===============================
 
+            transaction = await sequelize.transaction();
+
             const skill = await Skills.create({
                 name,
                 type,
@@ -124,7 +125,7 @@ module.exports = {
 
         } catch (error) {
 
-            await transaction.rollback();
+            if (transaction) await transaction.rollback();
             console.error(error);
 
             return interaction.reply({

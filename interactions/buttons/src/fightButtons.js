@@ -214,6 +214,10 @@ module.exports = { handleFightStart };
 function parseMonsterQueue(rawQueue) {
     if (!rawQueue) return null;
 
+    if (Array.isArray(rawQueue)) {
+        return rawQueue;
+    }
+
     try {
         let parsed = JSON.parse(rawQueue);
 

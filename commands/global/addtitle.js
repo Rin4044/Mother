@@ -26,7 +26,7 @@ module.exports = {
 
     async execute(interaction) {
 
-        const transaction = await sequelize.transaction();
+        let transaction = null;
 
         try {
 
@@ -81,6 +81,8 @@ module.exports = {
             // ==========================
             // CREATE TITLE
             // ==========================
+
+            transaction = await sequelize.transaction();
 
             const title = await Titles.create({
                 name,
@@ -143,7 +145,7 @@ module.exports = {
 
         } catch (error) {
 
-            await transaction.rollback();
+            if (transaction) await transaction.rollback();
             console.error(error);
 
             return interaction.reply({
