@@ -1,4 +1,4 @@
-const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder, ComponentType, MessageFlags } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder, MessageFlags } = require('discord.js');
 
 const { Profiles, UserTitles, Titles, UserSkills, Skills } = require('../../database.js');
 const {
@@ -8,120 +8,103 @@ const {
 } = require('../../utils/evolutionConfig');
 const { RACES } = require('../../utils/races');
 
-const SELECT_CUSTOM_ID = 'race_tree_select';
-const SELECT_TIMEOUT_MS = 120000;
-
 module.exports = {
     data: new SlashCommandBuilder()
-        .setName('race')
-        .setDescription('Race information')
+        .setName('racetree')
+        .setDescription('View evolution trees by race branch')
         .addSubcommand(sub =>
             sub
-                .setName('tree')
-                .setDescription('View evolution tree and race details')
+                .setName('human')
+                .setDescription('Show the Human evolution tree')
+        )
+        .addSubcommand(sub =>
+            sub
+                .setName('demon')
+                .setDescription('Show the Demon evolution tree')
+        )
+        .addSubcommand(sub =>
+            sub
+                .setName('taratect')
+                .setDescription('Show the Taratect evolution tree')
+        )
+        .addSubcommand(sub =>
+            sub
+                .setName('elf')
+                .setDescription('Show the Elf evolution tree')
         ),
 
     async execute(interaction) {
         const subcommand = interaction.options.getSubcommand();
-        if (subcommand !== 'tree') return;
+        const branchRootMap = {
+            human: 'human',
+            demon: 'lesser demon',
+            taratect: 'small lesser taratect',
+            elf: 'young elf'
+        };
+        const branchRoot = branchRootMap[subcommand];
+        if (!branchRoot) return;
 
         const profile = await Profiles.findOne({
             where: { userId: interaction.user.id }
         });
 
-        const raceOptions = buildRaceOptions();
-        const initialRaceKey = toRuleKey(profile?.race || 'small lesser taratect');
-
-        const initialEmbed = await buildRaceDetailEmbed(initialRaceKey, profile);
-        initialEmbed.setTitle('Race Tree');
-        initialEmbed.setDescription(
-            `${buildTreeOverview()}\n\n${initialEmbed.data.description || ''}`
-        );
-
-        const row = new ActionRowBuilder().addComponents(
-            new StringSelectMenuBuilder()
-                .setCustomId(SELECT_CUSTOM_ID)
-                .setPlaceholder('Select a race to inspect')
-                .addOptions(raceOptions)
-        );
+        const rootKey = toRuleKey(branchRoot);
+        const initialEmbed = await buildRaceDetailEmbed(rootKey, profile);
+        initialEmbed.setTitle(`${formatRaceName(rootKey)} Tree`);
+        initialEmbed.setDescription(buildTreeOverview(rootKey));
 
         await interaction.reply({
             embeds: [initialEmbed],
-            components: [row],
             flags: MessageFlags.Ephemeral
-        });
-        const message = await interaction.fetchReply();
-
-        const collector = message.createMessageComponentCollector({
-            componentType: ComponentType.StringSelect,
-            time: SELECT_TIMEOUT_MS
-        });
-
-        collector.on('collect', async (i) => {
-            if (i.user.id !== interaction.user.id) {
-                return i.reply({
-                    content: 'Not your menu.',
-                    flags: MessageFlags.Ephemeral
-                });
-            }
-
-            await i.deferUpdate();
-
-            const selectedKey = i.values[0];
-            const embed = await buildRaceDetailEmbed(selectedKey, profile);
-            embed.setTitle('Race Tree');
-            embed.setDescription(
-                `${buildTreeOverview()}\n\n${embed.data.description || ''}`
-            );
-
-            await i.editReply({
-                embeds: [embed],
-                components: [row]
-            });
-        });
-
-        collector.on('end', async () => {
-            await message.edit({ components: [] }).catch(() => {});
         });
     }
 };
 
-function buildRaceOptions() {
-    const keys = getAllRaceKeys();
-    return keys.slice(0, 25).map(key => ({
-        label: formatRaceName(key),
-        value: key
-    }));
-}
-
-function getAllRaceKeys() {
-    const set = new Set();
-    for (const parent of Object.keys(EVOLUTION_TREE)) {
-        set.add(toRuleKey(parent));
-        for (const child of EVOLUTION_TREE[parent] || []) {
-            set.add(toRuleKey(child));
-        }
-    }
-    for (const race of Object.keys(RACES)) {
-        set.add(toRuleKey(race));
-    }
-    return [...set].sort((a, b) => formatRaceName(a).localeCompare(formatRaceName(b)));
-}
-
-function buildTreeOverview() {
+function buildTreeOverview(rootKey) {
+    const rootRace = fromRuleKey(rootKey);
+    const branchKeys = collectBranchKeys(rootRace);
     const lines = [];
     for (const [parent, children] of Object.entries(EVOLUTION_TREE)) {
+        const parentKey = toRuleKey(parent);
+        if (!branchKeys.has(parentKey)) continue;
         const left = formatRaceName(toRuleKey(parent));
-        const right = (children || []).map(c => formatRaceName(toRuleKey(c))).join(', ') || '-';
+        const right = (children || [])
+            .map(c => toRuleKey(c))
+            .filter(childKey => branchKeys.has(childKey))
+            .map(c => formatRaceName(c))
+            .join(', ') || '-';
         lines.push(`**${left}** -> ${right}`);
     }
-    return lines.join('\n');
+    return lines.join('\n') || 'No evolutions found for this branch.';
+}
+
+function collectBranchKeys(rootRace) {
+    const visited = new Set();
+    const queue = [rootRace];
+
+    while (queue.length) {
+        const current = queue.shift();
+        const currentKey = toRuleKey(current);
+        if (visited.has(currentKey)) continue;
+        visited.add(currentKey);
+
+        const children = EVOLUTION_TREE[current] || [];
+        for (const child of children) {
+            queue.push(child);
+        }
+    }
+
+    return visited;
 }
 
 async function buildRaceDetailEmbed(ruleKey, profile) {
     const raceName = fromRuleKey(ruleKey);
     const raceData = RACES[raceName];
     const rule = getEvolutionRule(ruleKey);
+    const branchKeys = collectBranchKeys(raceName);
+    const branchRaces = [...branchKeys]
+        .map(key => formatRaceName(key))
+        .sort((a, b) => a.localeCompare(b));
     const next = (EVOLUTION_TREE[raceName] || []).map(toRuleKey);
 
     const requirements = formatRequirements(rule);
@@ -141,7 +124,8 @@ async function buildRaceDetailEmbed(ruleKey, profile) {
                 name: 'Next Evolutions',
                 value: clampField(next.length ? next.map(k => formatRaceName(k)).join(', ') : 'None'),
                 inline: false
-            }
+            },
+            { name: 'Branch Races', value: clampField(branchRaces.join(', ')), inline: false }
         );
 
     if (profile) {
