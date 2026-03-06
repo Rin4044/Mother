@@ -127,6 +127,7 @@ const MAX_LEVEL_BY_RACE = {
     'warborn human': 30,
     'runic human': 30,
     'sacred human': 30,
+    'high elf': 10,
     'transcendent human': 50,
     'mythic blademaster': 50,
     'astral human': 50,
@@ -470,31 +471,45 @@ const EVOLUTION_RULES = {
     },
     spirit_elf: {
         requiredTitles: [],
-        requiredSkills: [],
-        grantedSkills: [{ name: 'MP Recovery Speed', level: 3 }]
+        requiredSkills: [
+            { name: 'Magic Attack', level: 4 },
+            { name: 'MP Recovery Speed', level: 4 }
+        ],
+        grantedSkills: [
+            { name: 'MP Recovery Speed', level: 4 },
+            { name: 'Resistance', level: 2 },
+            { name: 'Detection', level: 2 }
+        ]
     },
     spiritbound_elf: {
         requiredTitles: [],
         requiredSkills: [
-            { name: 'MP Recovery Speed', level: 6 },
-            { name: 'Resistance', level: 4 }
+            { name: 'MP Recovery Speed', level: 8 },
+            { name: 'Resistance', level: 6 },
+            { name: 'Magic Attack', level: 6 },
+            { name: 'Energy Conferment', level: 2 }
         ],
         grantedSkills: [
-            { name: 'MP Recovery Speed', level: 6 },
-            { name: 'Resistance', level: 5 }
+            { name: 'MP Recovery Speed', level: 8 },
+            { name: 'Resistance', level: 7 },
+            { name: 'Magic Attack', level: 7 },
+            { name: 'Energy Conferment', level: 3 }
         ]
     },
     astral_arch_elf: {
         requiredTitles: [],
         requiredSkills: [
-            { name: 'MP Recovery Speed', level: 8 },
-            { name: 'Resistance', level: 8 },
-            { name: 'Magic Attack', level: 8 }
+            { name: 'MP Recovery Speed', level: 10 },
+            { name: 'Resistance', level: 9 },
+            { name: 'Magic Attack', level: 9 },
+            { name: 'Energy Conferment', level: 5 }
         ],
         grantedSkills: [
-            { name: 'MP Recovery Speed', level: 8 },
-            { name: 'Resistance', level: 8 },
-            { name: 'Magic Attack', level: 8 }
+            { name: 'MP Recovery Speed', level: 10 },
+            { name: 'Resistance', level: 10 },
+            { name: 'Magic Attack', level: 10 },
+            { name: 'Energy Conferment', level: 6 },
+            { name: 'Detection', level: 6 }
         ]
     },
     shadow_elf: {

@@ -201,18 +201,18 @@ const RACES = {
         scalingMultiplier: 3.4
     },
     "spirit elf": {
-        base: { hp: 180, mp: 290, stamina: 165, vitalStamina: 165, offense: 70, defense: 78, magic: 210, resistance: 190, speed: 130 },
-        growth: { hp: 13, mp: 22, stamina: 12, vitalStamina: 12, offense: 9, defense: 9, magic: 19, resistance: 17, speed: 12 },
+        base: { hp: 165, mp: 270, stamina: 155, vitalStamina: 155, offense: 62, defense: 74, magic: 198, resistance: 184, speed: 122 },
+        growth: { hp: 14, mp: 24, stamina: 13, vitalStamina: 13, offense: 10, defense: 10, magic: 22, resistance: 20, speed: 13 },
         scalingMultiplier: 1.45
     },
     "spiritbound elf": {
-        base: { hp: 760, mp: 1700, stamina: 700, vitalStamina: 700, offense: 520, defense: 680, magic: 1880, resistance: 1800, speed: 1150 },
-        growth: { hp: 22, mp: 45, stamina: 20, vitalStamina: 20, offense: 17, defense: 22, magic: 48, resistance: 45, speed: 30 },
+        base: { hp: 700, mp: 1580, stamina: 650, vitalStamina: 650, offense: 480, defense: 640, magic: 1760, resistance: 1710, speed: 1050 },
+        growth: { hp: 24, mp: 50, stamina: 22, vitalStamina: 22, offense: 19, defense: 24, magic: 55, resistance: 52, speed: 34 },
         scalingMultiplier: 2.2
     },
     "astral arch elf": {
-        base: { hp: 2200, mp: 8000, stamina: 2000, vitalStamina: 2000, offense: 1600, defense: 2850, magic: 9000, resistance: 8800, speed: 4050 },
-        growth: { hp: 48, mp: 156, stamina: 44, vitalStamina: 44, offense: 38, defense: 66, magic: 172, resistance: 168, speed: 94 },
+        base: { hp: 2050, mp: 7600, stamina: 1880, vitalStamina: 1880, offense: 1450, defense: 2550, magic: 8600, resistance: 8300, speed: 3750 },
+        growth: { hp: 58, mp: 172, stamina: 52, vitalStamina: 52, offense: 46, defense: 74, magic: 192, resistance: 188, speed: 112 },
         scalingMultiplier: 3.45
     },
     "shadow elf": {
