@@ -90,69 +90,69 @@ const RACES = {
         scalingMultiplier: 1
     },
     "trained human": {
-        base: { hp: 76, mp: 52, stamina: 74, vitalStamina: 74, offense: 34, defense: 30, magic: 22, resistance: 24, speed: 30 },
+        base: { hp: 84, mp: 58, stamina: 80, vitalStamina: 80, offense: 36, defense: 32, magic: 24, resistance: 24, speed: 32 },
         growth: { hp: 8, mp: 6, stamina: 8, vitalStamina: 8, offense: 5, defense: 5, magic: 4, resistance: 4, speed: 5 },
-        scalingMultiplier: 1.1
+        scalingMultiplier: 1.12
     },
     "advanced human": {
-        base: { hp: 240, mp: 180, stamina: 230, vitalStamina: 230, offense: 120, defense: 110, magic: 90, resistance: 100, speed: 115 },
-        growth: { hp: 16, mp: 13, stamina: 15, vitalStamina: 15, offense: 11, defense: 10, magic: 9, resistance: 10, speed: 11 },
-        scalingMultiplier: 1.4
+        base: { hp: 280, mp: 200, stamina: 260, vitalStamina: 260, offense: 130, defense: 120, magic: 96, resistance: 104, speed: 120 },
+        growth: { hp: 17, mp: 13, stamina: 16, vitalStamina: 16, offense: 12, defense: 11, magic: 9, resistance: 10, speed: 11 },
+        scalingMultiplier: 1.45
     },
     "high human": {
-        base: { hp: 1050, mp: 900, stamina: 980, vitalStamina: 980, offense: 840, defense: 820, magic: 740, resistance: 780, speed: 820 },
-        growth: { hp: 30, mp: 25, stamina: 28, vitalStamina: 28, offense: 24, defense: 23, magic: 22, resistance: 22, speed: 24 },
-        scalingMultiplier: 2
+        base: { hp: 760, mp: 620, stamina: 700, vitalStamina: 700, offense: 620, defense: 600, magic: 520, resistance: 560, speed: 590 },
+        growth: { hp: 26, mp: 22, stamina: 24, vitalStamina: 24, offense: 21, defense: 20, magic: 18, resistance: 19, speed: 20 },
+        scalingMultiplier: 1.9
     },
     "transcendent human": {
-        base: { hp: 4200, mp: 4500, stamina: 3800, vitalStamina: 3800, offense: 4700, defense: 4300, magic: 5200, resistance: 5000, speed: 4500 },
-        growth: { hp: 78, mp: 86, stamina: 72, vitalStamina: 72, offense: 84, defense: 76, magic: 92, resistance: 88, speed: 82 },
-        scalingMultiplier: 3.1
+        base: { hp: 9800, mp: 9400, stamina: 8600, vitalStamina: 8600, offense: 10200, defense: 9600, magic: 11200, resistance: 10800, speed: 9800 },
+        growth: { hp: 132, mp: 128, stamina: 118, vitalStamina: 118, offense: 138, defense: 130, magic: 150, resistance: 144, speed: 134 },
+        scalingMultiplier: 3.95
     },
     "blade human": {
-        base: { hp: 270, mp: 130, stamina: 250, vitalStamina: 250, offense: 155, defense: 120, magic: 60, resistance: 80, speed: 145 },
-        growth: { hp: 17, mp: 10, stamina: 16, vitalStamina: 16, offense: 13, defense: 10, magic: 6, resistance: 8, speed: 12 },
-        scalingMultiplier: 1.45
+        base: { hp: 820, mp: 420, stamina: 760, vitalStamina: 760, offense: 760, defense: 620, magic: 300, resistance: 420, speed: 700 },
+        growth: { hp: 27, mp: 16, stamina: 25, vitalStamina: 25, offense: 26, defense: 20, magic: 12, resistance: 15, speed: 23 },
+        scalingMultiplier: 1.95
     },
     "warborn human": {
-        base: { hp: 1500, mp: 700, stamina: 1400, vitalStamina: 1400, offense: 1450, defense: 1120, magic: 520, resistance: 860, speed: 1250 },
-        growth: { hp: 36, mp: 20, stamina: 34, vitalStamina: 34, offense: 35, defense: 28, magic: 16, resistance: 22, speed: 31 },
-        scalingMultiplier: 2.15
+        base: { hp: 3200, mp: 1300, stamina: 3000, vitalStamina: 3000, offense: 3500, defense: 2600, magic: 900, resistance: 1700, speed: 3000 },
+        growth: { hp: 64, mp: 30, stamina: 60, vitalStamina: 60, offense: 70, defense: 52, magic: 20, resistance: 34, speed: 60 },
+        scalingMultiplier: 2.85
     },
     "mythic blademaster": {
-        base: { hp: 5600, mp: 1600, stamina: 5200, vitalStamina: 5200, offense: 7000, defense: 4800, magic: 1700, resistance: 3800, speed: 6500 },
-        growth: { hp: 96, mp: 36, stamina: 90, vitalStamina: 90, offense: 122, defense: 82, magic: 40, resistance: 68, speed: 114 },
-        scalingMultiplier: 3.4
+        base: { hp: 11200, mp: 3000, stamina: 10400, vitalStamina: 10400, offense: 12800, defense: 9000, magic: 3200, resistance: 7600, speed: 11800 },
+        growth: { hp: 154, mp: 52, stamina: 144, vitalStamina: 144, offense: 186, defense: 130, magic: 56, resistance: 104, speed: 172 },
+        scalingMultiplier: 4.05
     },
     "arcane human": {
-        base: { hp: 220, mp: 300, stamina: 210, vitalStamina: 210, offense: 85, defense: 95, magic: 170, resistance: 150, speed: 105 },
-        growth: { hp: 14, mp: 19, stamina: 13, vitalStamina: 13, offense: 9, defense: 9, magic: 14, resistance: 12, speed: 10 },
-        scalingMultiplier: 1.45
+        base: { hp: 720, mp: 980, stamina: 660, vitalStamina: 660, offense: 420, defense: 500, magic: 980, resistance: 900, speed: 560 },
+        growth: { hp: 24, mp: 30, stamina: 22, vitalStamina: 22, offense: 16, defense: 18, magic: 30, resistance: 28, speed: 17 },
+        scalingMultiplier: 1.95
     },
     "runic human": {
-        base: { hp: 900, mp: 1700, stamina: 820, vitalStamina: 820, offense: 620, defense: 760, magic: 1820, resistance: 1700, speed: 940 },
-        growth: { hp: 24, mp: 38, stamina: 22, vitalStamina: 22, offense: 18, defense: 21, magic: 40, resistance: 36, speed: 24 },
-        scalingMultiplier: 2.2
+        base: { hp: 3000, mp: 4200, stamina: 2700, vitalStamina: 2700, offense: 2100, defense: 2600, magic: 4600, resistance: 4300, speed: 2600 },
+        growth: { hp: 58, mp: 78, stamina: 52, vitalStamina: 52, offense: 42, defense: 50, magic: 84, resistance: 78, speed: 50 },
+        scalingMultiplier: 2.85
     },
     "astral human": {
-        base: { hp: 2800, mp: 7600, stamina: 2500, vitalStamina: 2500, offense: 2200, defense: 2700, magic: 8200, resistance: 7700, speed: 3200 },
-        growth: { hp: 56, mp: 134, stamina: 50, vitalStamina: 50, offense: 44, defense: 56, magic: 146, resistance: 138, speed: 66 },
-        scalingMultiplier: 3.35
+        base: { hp: 9200, mp: 13200, stamina: 8400, vitalStamina: 8400, offense: 7600, defense: 9400, magic: 14800, resistance: 13800, speed: 9000 },
+        growth: { hp: 128, mp: 188, stamina: 116, vitalStamina: 116, offense: 108, defense: 132, magic: 210, resistance: 196, speed: 128 },
+        scalingMultiplier: 4.02
     },
     "holy human": {
-        base: { hp: 230, mp: 210, stamina: 220, vitalStamina: 220, offense: 90, defense: 130, magic: 115, resistance: 150, speed: 90 },
-        growth: { hp: 16, mp: 15, stamina: 15, vitalStamina: 15, offense: 10, defense: 13, magic: 12, resistance: 14, speed: 9 },
-        scalingMultiplier: 1.45
+        base: { hp: 780, mp: 700, stamina: 720, vitalStamina: 720, offense: 420, defense: 700, magic: 620, resistance: 760, speed: 500 },
+        growth: { hp: 25, mp: 24, stamina: 23, vitalStamina: 23, offense: 15, defense: 24, magic: 20, resistance: 26, speed: 16 },
+        scalingMultiplier: 1.95
     },
     "sacred human": {
-        base: { hp: 1200, mp: 1200, stamina: 1120, vitalStamina: 1120, offense: 820, defense: 1300, magic: 1120, resistance: 1450, speed: 900 },
-        growth: { hp: 33, mp: 33, stamina: 31, vitalStamina: 31, offense: 24, defense: 36, magic: 31, resistance: 38, speed: 25 },
-        scalingMultiplier: 2.15
+        base: { hp: 3400, mp: 3600, stamina: 3100, vitalStamina: 3100, offense: 2400, defense: 4200, magic: 3900, resistance: 4500, speed: 2500 },
+        growth: { hp: 66, mp: 70, stamina: 60, vitalStamina: 60, offense: 44, defense: 72, magic: 68, resistance: 76, speed: 44 },
+        scalingMultiplier: 2.9
     },
     "divine human": {
-        base: { hp: 4600, mp: 6400, stamina: 4200, vitalStamina: 4200, offense: 4200, defense: 5600, magic: 7000, resistance: 7400, speed: 4400 },
-        growth: { hp: 82, mp: 118, stamina: 74, vitalStamina: 74, offense: 78, defense: 96, magic: 126, resistance: 132, speed: 80 },
-        scalingMultiplier: 3.3
+        base: { hp: 10800, mp: 12500, stamina: 9800, vitalStamina: 9800, offense: 9800, defense: 11200, magic: 13200, resistance: 13800, speed: 9600 },
+        growth: { hp: 146, mp: 172, stamina: 132, vitalStamina: 132, offense: 132, defense: 152, magic: 182, resistance: 190, speed: 128 },
+        scalingMultiplier: 4.1
     },
 
     "young elf": {
@@ -161,165 +161,165 @@ const RACES = {
         scalingMultiplier: 1
     },
     "adult elf": {
-        base: { hp: 62, mp: 82, stamina: 58, vitalStamina: 58, offense: 24, defense: 20, magic: 44, resistance: 40, speed: 38 },
+        base: { hp: 66, mp: 86, stamina: 62, vitalStamina: 62, offense: 25, defense: 21, magic: 46, resistance: 42, speed: 40 },
         growth: { hp: 7, mp: 9, stamina: 7, vitalStamina: 7, offense: 4, defense: 4, magic: 7, resistance: 6, speed: 6 },
-        scalingMultiplier: 1.1
+        scalingMultiplier: 1.12
     },
     "high elf": {
-        base: { hp: 180, mp: 260, stamina: 170, vitalStamina: 170, offense: 82, defense: 72, magic: 170, resistance: 150, speed: 130 },
-        growth: { hp: 13, mp: 17, stamina: 12, vitalStamina: 12, offense: 8, defense: 7, magic: 13, resistance: 11, speed: 10 },
-        scalingMultiplier: 1.35
+        base: { hp: 210, mp: 300, stamina: 190, vitalStamina: 190, offense: 92, defense: 80, magic: 190, resistance: 170, speed: 146 },
+        growth: { hp: 14, mp: 18, stamina: 13, vitalStamina: 13, offense: 9, defense: 8, magic: 14, resistance: 12, speed: 11 },
+        scalingMultiplier: 1.42
     },
     "moon elf": {
-        base: { hp: 220, mp: 300, stamina: 205, vitalStamina: 205, offense: 95, defense: 88, magic: 200, resistance: 190, speed: 180 },
-        growth: { hp: 14, mp: 19, stamina: 13, vitalStamina: 13, offense: 9, defense: 8, magic: 15, resistance: 14, speed: 14 },
-        scalingMultiplier: 1.45
+        base: { hp: 300, mp: 420, stamina: 270, vitalStamina: 270, offense: 120, defense: 106, magic: 280, resistance: 260, speed: 240 },
+        growth: { hp: 16, mp: 22, stamina: 14, vitalStamina: 14, offense: 10, defense: 9, magic: 18, resistance: 16, speed: 16 },
+        scalingMultiplier: 1.7
     },
     "silver moon elf": {
-        base: { hp: 920, mp: 1700, stamina: 840, vitalStamina: 840, offense: 600, defense: 720, magic: 1800, resistance: 1760, speed: 1520 },
-        growth: { hp: 24, mp: 40, stamina: 22, vitalStamina: 22, offense: 18, defense: 20, magic: 41, resistance: 39, speed: 34 },
-        scalingMultiplier: 2.2
+        base: { hp: 2800, mp: 4200, stamina: 2500, vitalStamina: 2500, offense: 1900, defense: 2400, magic: 4300, resistance: 4100, speed: 3600 },
+        growth: { hp: 54, mp: 76, stamina: 48, vitalStamina: 48, offense: 38, defense: 46, magic: 80, resistance: 76, speed: 66 },
+        scalingMultiplier: 2.85
     },
     "lunar arch elf": {
-        base: { hp: 2600, mp: 7600, stamina: 2400, vitalStamina: 2400, offense: 1900, defense: 2500, magic: 8600, resistance: 8400, speed: 5200 },
-        growth: { hp: 52, mp: 138, stamina: 48, vitalStamina: 48, offense: 40, defense: 50, magic: 154, resistance: 150, speed: 108 },
-        scalingMultiplier: 3.4
+        base: { hp: 9800, mp: 14200, stamina: 8600, vitalStamina: 8600, offense: 8600, defense: 9800, magic: 15600, resistance: 15000, speed: 12500 },
+        growth: { hp: 136, mp: 204, stamina: 122, vitalStamina: 122, offense: 122, defense: 138, magic: 220, resistance: 212, speed: 176 },
+        scalingMultiplier: 4.12
     },
     "sun elf": {
-        base: { hp: 210, mp: 310, stamina: 190, vitalStamina: 190, offense: 105, defense: 80, magic: 220, resistance: 170, speed: 150 },
-        growth: { hp: 13, mp: 19, stamina: 12, vitalStamina: 12, offense: 10, defense: 8, magic: 16, resistance: 13, speed: 12 },
-        scalingMultiplier: 1.45
+        base: { hp: 290, mp: 450, stamina: 255, vitalStamina: 255, offense: 132, defense: 98, magic: 320, resistance: 250, speed: 220 },
+        growth: { hp: 16, mp: 23, stamina: 14, vitalStamina: 14, offense: 11, defense: 9, magic: 20, resistance: 16, speed: 14 },
+        scalingMultiplier: 1.7
     },
     "radiant sun elf": {
-        base: { hp: 860, mp: 1760, stamina: 780, vitalStamina: 780, offense: 680, defense: 620, magic: 1920, resistance: 1600, speed: 1340 },
-        growth: { hp: 22, mp: 40, stamina: 20, vitalStamina: 20, offense: 20, defense: 18, magic: 43, resistance: 36, speed: 30 },
-        scalingMultiplier: 2.2
+        base: { hp: 3000, mp: 4600, stamina: 2600, vitalStamina: 2600, offense: 3600, defense: 2200, magic: 5200, resistance: 4600, speed: 3400 },
+        growth: { hp: 56, mp: 82, stamina: 50, vitalStamina: 50, offense: 66, defense: 40, magic: 94, resistance: 84, speed: 62 },
+        scalingMultiplier: 2.85
     },
     "solar arch elf": {
-        base: { hp: 2500, mp: 7900, stamina: 2300, vitalStamina: 2300, offense: 2800, defense: 2100, magic: 9000, resistance: 8000, speed: 4700 },
-        growth: { hp: 50, mp: 142, stamina: 46, vitalStamina: 46, offense: 58, defense: 44, magic: 158, resistance: 144, speed: 98 },
-        scalingMultiplier: 3.4
+        base: { hp: 10200, mp: 14600, stamina: 9000, vitalStamina: 9000, offense: 11200, defense: 8400, magic: 16200, resistance: 14600, speed: 11800 },
+        growth: { hp: 142, mp: 210, stamina: 128, vitalStamina: 128, offense: 164, defense: 120, magic: 228, resistance: 208, speed: 168 },
+        scalingMultiplier: 4.12
     },
     "spirit elf": {
-        base: { hp: 165, mp: 270, stamina: 155, vitalStamina: 155, offense: 62, defense: 74, magic: 198, resistance: 184, speed: 122 },
-        growth: { hp: 14, mp: 24, stamina: 13, vitalStamina: 13, offense: 10, defense: 10, magic: 22, resistance: 20, speed: 13 },
-        scalingMultiplier: 1.45
+        base: { hp: 270, mp: 460, stamina: 240, vitalStamina: 240, offense: 105, defense: 125, magic: 320, resistance: 300, speed: 200 },
+        growth: { hp: 17, mp: 26, stamina: 15, vitalStamina: 15, offense: 11, defense: 12, magic: 24, resistance: 23, speed: 15 },
+        scalingMultiplier: 1.72
     },
     "spiritbound elf": {
-        base: { hp: 700, mp: 1580, stamina: 650, vitalStamina: 650, offense: 480, defense: 640, magic: 1760, resistance: 1710, speed: 1050 },
-        growth: { hp: 24, mp: 50, stamina: 22, vitalStamina: 22, offense: 19, defense: 24, magic: 55, resistance: 52, speed: 34 },
-        scalingMultiplier: 2.2
+        base: { hp: 3100, mp: 5200, stamina: 2700, vitalStamina: 2700, offense: 2200, defense: 3800, magic: 5600, resistance: 5500, speed: 3000 },
+        growth: { hp: 60, mp: 92, stamina: 52, vitalStamina: 52, offense: 40, defense: 64, magic: 102, resistance: 100, speed: 56 },
+        scalingMultiplier: 2.9
     },
     "astral arch elf": {
-        base: { hp: 2050, mp: 7600, stamina: 1880, vitalStamina: 1880, offense: 1450, defense: 2550, magic: 8600, resistance: 8300, speed: 3750 },
-        growth: { hp: 58, mp: 172, stamina: 52, vitalStamina: 52, offense: 46, defense: 74, magic: 192, resistance: 188, speed: 112 },
-        scalingMultiplier: 3.45
+        base: { hp: 9000, mp: 15000, stamina: 7800, vitalStamina: 7800, offense: 7800, defense: 9200, magic: 16800, resistance: 16200, speed: 11200 },
+        growth: { hp: 138, mp: 216, stamina: 122, vitalStamina: 122, offense: 116, defense: 136, magic: 236, resistance: 228, speed: 164 },
+        scalingMultiplier: 4.15
     },
     "shadow elf": {
-        base: { hp: 190, mp: 260, stamina: 175, vitalStamina: 175, offense: 120, defense: 78, magic: 170, resistance: 140, speed: 210 },
-        growth: { hp: 12, mp: 16, stamina: 11, vitalStamina: 11, offense: 11, defense: 7, magic: 12, resistance: 10, speed: 17 },
-        scalingMultiplier: 1.45
+        base: { hp: 280, mp: 360, stamina: 250, vitalStamina: 250, offense: 170, defense: 105, magic: 260, resistance: 220, speed: 330 },
+        growth: { hp: 15, mp: 20, stamina: 14, vitalStamina: 14, offense: 14, defense: 9, magic: 16, resistance: 13, speed: 24 },
+        scalingMultiplier: 1.72
     },
     "nightshade elf": {
-        base: { hp: 780, mp: 1460, stamina: 720, vitalStamina: 720, offense: 980, defense: 620, magic: 1580, resistance: 1420, speed: 1860 },
-        growth: { hp: 20, mp: 34, stamina: 18, vitalStamina: 18, offense: 26, defense: 17, magic: 34, resistance: 31, speed: 40 },
-        scalingMultiplier: 2.2
+        base: { hp: 2900, mp: 3800, stamina: 2500, vitalStamina: 2500, offense: 4100, defense: 2400, magic: 4400, resistance: 3800, speed: 5600 },
+        growth: { hp: 54, mp: 68, stamina: 48, vitalStamina: 48, offense: 76, defense: 44, magic: 80, resistance: 70, speed: 102 },
+        scalingMultiplier: 2.9
     },
     "void elf": {
-        base: { hp: 2200, mp: 7200, stamina: 2000, vitalStamina: 2000, offense: 3200, defense: 1900, magic: 8200, resistance: 7600, speed: 6400 },
-        growth: { hp: 44, mp: 130, stamina: 40, vitalStamina: 40, offense: 66, defense: 40, magic: 146, resistance: 138, speed: 128 },
-        scalingMultiplier: 3.4
+        base: { hp: 9800, mp: 13200, stamina: 8600, vitalStamina: 8600, offense: 12800, defense: 7600, magic: 14800, resistance: 13400, speed: 16800 },
+        growth: { hp: 132, mp: 196, stamina: 118, vitalStamina: 118, offense: 186, defense: 112, magic: 210, resistance: 190, speed: 246 },
+        scalingMultiplier: 4.12
     },
 
     "lesser demon": {
-        base: { hp: 62, mp: 46, stamina: 60, vitalStamina: 60, offense: 30, defense: 24, magic: 24, resistance: 22, speed: 22 },
-        growth: { hp: 8, mp: 6, stamina: 8, vitalStamina: 8, offense: 6, defense: 5, magic: 5, resistance: 5, speed: 5 },
-        scalingMultiplier: 1.1
+        base: { hp: 72, mp: 52, stamina: 68, vitalStamina: 68, offense: 34, defense: 27, magic: 28, resistance: 24, speed: 24 },
+        growth: { hp: 9, mp: 7, stamina: 9, vitalStamina: 9, offense: 6, defense: 5, magic: 5, resistance: 5, speed: 5 },
+        scalingMultiplier: 1.12
     },
     "true demon": {
-        base: { hp: 150, mp: 120, stamina: 145, vitalStamina: 145, offense: 88, defense: 72, magic: 80, resistance: 76, speed: 70 },
-        growth: { hp: 13, mp: 11, stamina: 13, vitalStamina: 13, offense: 10, defense: 9, magic: 9, resistance: 9, speed: 9 },
-        scalingMultiplier: 1.35
+        base: { hp: 180, mp: 140, stamina: 170, vitalStamina: 170, offense: 102, defense: 82, magic: 92, resistance: 84, speed: 78 },
+        growth: { hp: 14, mp: 12, stamina: 14, vitalStamina: 14, offense: 11, defense: 10, magic: 10, resistance: 9, speed: 10 },
+        scalingMultiplier: 1.42
     },
     "greater demon": {
-        base: { hp: 1100, mp: 980, stamina: 1040, vitalStamina: 1040, offense: 900, defense: 820, magic: 860, resistance: 850, speed: 800 },
-        growth: { hp: 31, mp: 28, stamina: 30, vitalStamina: 30, offense: 28, defense: 25, magic: 25, resistance: 25, speed: 24 },
-        scalingMultiplier: 2
-    },
-    "arch demon": {
-        base: { hp: 900, mp: 1200, stamina: 820, vitalStamina: 820, offense: 700, defense: 650, magic: 1220, resistance: 1180, speed: 700 },
-        growth: { hp: 26, mp: 36, stamina: 24, vitalStamina: 24, offense: 22, defense: 20, magic: 37, resistance: 36, speed: 22 },
+        base: { hp: 1300, mp: 1100, stamina: 1220, vitalStamina: 1220, offense: 1040, defense: 940, magic: 960, resistance: 930, speed: 920 },
+        growth: { hp: 34, mp: 30, stamina: 32, vitalStamina: 32, offense: 30, defense: 27, magic: 27, resistance: 26, speed: 27 },
         scalingMultiplier: 2.05
     },
+    "arch demon": {
+        base: { hp: 1400, mp: 1800, stamina: 1260, vitalStamina: 1260, offense: 980, defense: 920, magic: 1820, resistance: 1700, speed: 980 },
+        growth: { hp: 34, mp: 42, stamina: 30, vitalStamina: 30, offense: 25, defense: 24, magic: 42, resistance: 38, speed: 24 },
+        scalingMultiplier: 2.2
+    },
     "demon semi divinity": {
-        base: { hp: 2300, mp: 3100, stamina: 2100, vitalStamina: 2100, offense: 1900, defense: 1800, magic: 3400, resistance: 3300, speed: 1900 },
-        growth: { hp: 52, mp: 74, stamina: 48, vitalStamina: 48, offense: 46, defense: 42, magic: 82, resistance: 80, speed: 44 },
-        scalingMultiplier: 2.7
+        base: { hp: 5200, mp: 6200, stamina: 4600, vitalStamina: 4600, offense: 4800, defense: 4300, magic: 7000, resistance: 6600, speed: 4700 },
+        growth: { hp: 82, mp: 96, stamina: 74, vitalStamina: 74, offense: 78, defense: 70, magic: 108, resistance: 102, speed: 74 },
+        scalingMultiplier: 3.25
     },
     "demon divinity": {
-        base: { hp: 9800, mp: 12200, stamina: 8800, vitalStamina: 8800, offense: 10200, defense: 9200, magic: 13600, resistance: 13100, speed: 9400 },
-        growth: { hp: 132, mp: 176, stamina: 118, vitalStamina: 118, offense: 138, defense: 126, magic: 194, resistance: 186, speed: 132 },
-        scalingMultiplier: 4
+        base: { hp: 12500, mp: 13600, stamina: 11000, vitalStamina: 11000, offense: 13800, defense: 11800, magic: 14200, resistance: 13600, speed: 12200 },
+        growth: { hp: 172, mp: 188, stamina: 152, vitalStamina: 152, offense: 190, defense: 164, magic: 196, resistance: 188, speed: 168 },
+        scalingMultiplier: 4.2
     },
     "oni": {
-        base: { hp: 1250, mp: 600, stamina: 1200, vitalStamina: 1200, offense: 1120, defense: 980, magic: 480, resistance: 700, speed: 860 },
-        growth: { hp: 35, mp: 18, stamina: 34, vitalStamina: 34, offense: 33, defense: 29, magic: 14, resistance: 20, speed: 24 },
-        scalingMultiplier: 2.1
+        base: { hp: 1600, mp: 760, stamina: 1500, vitalStamina: 1500, offense: 1420, defense: 1180, magic: 620, resistance: 860, speed: 1080 },
+        growth: { hp: 42, mp: 22, stamina: 40, vitalStamina: 40, offense: 40, defense: 32, magic: 16, resistance: 22, speed: 30 },
+        scalingMultiplier: 2.3
     },
     "calamity oni": {
-        base: { hp: 2800, mp: 900, stamina: 2700, vitalStamina: 2700, offense: 2950, defense: 2420, magic: 700, resistance: 1600, speed: 1900 },
-        growth: { hp: 58, mp: 22, stamina: 56, vitalStamina: 56, offense: 62, defense: 50, magic: 18, resistance: 34, speed: 38 },
-        scalingMultiplier: 2.7
+        base: { hp: 4600, mp: 1400, stamina: 4300, vitalStamina: 4300, offense: 5200, defense: 3900, magic: 1100, resistance: 2500, speed: 3600 },
+        growth: { hp: 88, mp: 30, stamina: 82, vitalStamina: 82, offense: 104, defense: 76, magic: 22, resistance: 50, speed: 70 },
+        scalingMultiplier: 3.2
     },
     "oni tyrant": {
-        base: { hp: 10200, mp: 1800, stamina: 9800, vitalStamina: 9800, offense: 12400, defense: 9200, magic: 1600, resistance: 6200, speed: 8600 },
-        growth: { hp: 138, mp: 36, stamina: 132, vitalStamina: 132, offense: 186, defense: 134, magic: 30, resistance: 94, speed: 128 },
-        scalingMultiplier: 3.9
+        base: { hp: 13800, mp: 3000, stamina: 13000, vitalStamina: 13000, offense: 16500, defense: 11800, magic: 2600, resistance: 8400, speed: 12800 },
+        growth: { hp: 194, mp: 48, stamina: 182, vitalStamina: 182, offense: 248, defense: 174, magic: 40, resistance: 116, speed: 190 },
+        scalingMultiplier: 4.05
     },
     "succubus": {
-        base: { hp: 980, mp: 1300, stamina: 900, vitalStamina: 900, offense: 720, defense: 660, magic: 1380, resistance: 1210, speed: 1180 },
-        growth: { hp: 26, mp: 34, stamina: 24, vitalStamina: 24, offense: 21, defense: 19, magic: 36, resistance: 32, speed: 30 },
-        scalingMultiplier: 2.1
+        base: { hp: 1500, mp: 1900, stamina: 1320, vitalStamina: 1320, offense: 1020, defense: 930, magic: 2100, resistance: 1820, speed: 1650 },
+        growth: { hp: 34, mp: 42, stamina: 30, vitalStamina: 30, offense: 24, defense: 22, magic: 48, resistance: 42, speed: 38 },
+        scalingMultiplier: 2.3
     },
     "night succubus": {
-        base: { hp: 2200, mp: 3200, stamina: 2000, vitalStamina: 2000, offense: 1600, defense: 1500, magic: 3500, resistance: 3200, speed: 2800 },
-        growth: { hp: 46, mp: 62, stamina: 42, vitalStamina: 42, offense: 34, defense: 32, magic: 70, resistance: 64, speed: 58 },
-        scalingMultiplier: 2.65
+        base: { hp: 4200, mp: 5600, stamina: 3600, vitalStamina: 3600, offense: 2900, defense: 2700, magic: 6200, resistance: 5600, speed: 4800 },
+        growth: { hp: 72, mp: 96, stamina: 64, vitalStamina: 64, offense: 52, defense: 50, magic: 112, resistance: 102, speed: 88 },
+        scalingMultiplier: 3.2
     },
     "queen succubus": {
-        base: { hp: 6800, mp: 10800, stamina: 6200, vitalStamina: 6200, offense: 5200, defense: 4800, magic: 12200, resistance: 11200, speed: 8600 },
-        growth: { hp: 94, mp: 168, stamina: 86, vitalStamina: 86, offense: 74, defense: 68, magic: 182, resistance: 170, speed: 126 },
-        scalingMultiplier: 3.75
+        base: { hp: 11800, mp: 15600, stamina: 10400, vitalStamina: 10400, offense: 8600, defense: 8000, magic: 17200, resistance: 16000, speed: 12600 },
+        growth: { hp: 160, mp: 224, stamina: 144, vitalStamina: 144, offense: 122, defense: 116, magic: 246, resistance: 232, speed: 180 },
+        scalingMultiplier: 4.15
     },
     "vampire": {
-        base: { hp: 1150, mp: 1100, stamina: 1050, vitalStamina: 1050, offense: 940, defense: 860, magic: 1020, resistance: 980, speed: 920 },
-        growth: { hp: 30, mp: 29, stamina: 28, vitalStamina: 28, offense: 27, defense: 24, magic: 27, resistance: 27, speed: 25 },
-        scalingMultiplier: 2.1
+        base: { hp: 1600, mp: 1500, stamina: 1450, vitalStamina: 1450, offense: 1300, defense: 1160, magic: 1400, resistance: 1320, speed: 1240 },
+        growth: { hp: 36, mp: 34, stamina: 33, vitalStamina: 33, offense: 32, defense: 28, magic: 30, resistance: 30, speed: 28 },
+        scalingMultiplier: 2.3
     },
     "elder vampire": {
-        base: { hp: 2500, mp: 2500, stamina: 2300, vitalStamina: 2300, offense: 2200, defense: 1950, magic: 2500, resistance: 2380, speed: 2100 },
-        growth: { hp: 50, mp: 50, stamina: 46, vitalStamina: 46, offense: 46, defense: 40, magic: 50, resistance: 48, speed: 43 },
-        scalingMultiplier: 2.7
+        base: { hp: 4500, mp: 4200, stamina: 4000, vitalStamina: 4000, offense: 4200, defense: 3600, magic: 4400, resistance: 4200, speed: 3900 },
+        growth: { hp: 76, mp: 72, stamina: 68, vitalStamina: 68, offense: 72, defense: 62, magic: 74, resistance: 70, speed: 64 },
+        scalingMultiplier: 3.2
     },
     "progenitor vampire": {
-        base: { hp: 7600, mp: 9200, stamina: 7000, vitalStamina: 7000, offense: 7400, defense: 6600, magic: 9800, resistance: 9400, speed: 7600 },
-        growth: { hp: 104, mp: 142, stamina: 94, vitalStamina: 94, offense: 102, defense: 90, magic: 150, resistance: 146, speed: 108 },
-        scalingMultiplier: 3.8
+        base: { hp: 12000, mp: 13000, stamina: 10800, vitalStamina: 10800, offense: 12200, defense: 10800, magic: 13600, resistance: 13000, speed: 11800 },
+        growth: { hp: 168, mp: 178, stamina: 150, vitalStamina: 150, offense: 172, defense: 152, magic: 186, resistance: 180, speed: 164 },
+        scalingMultiplier: 4.12
     },
     "fallen demon": {
-        base: { hp: 1000, mp: 1260, stamina: 920, vitalStamina: 920, offense: 760, defense: 720, magic: 1420, resistance: 1300, speed: 860 },
-        growth: { hp: 27, mp: 33, stamina: 25, vitalStamina: 25, offense: 22, defense: 21, magic: 37, resistance: 35, speed: 22 },
-        scalingMultiplier: 2.1
+        base: { hp: 1450, mp: 1900, stamina: 1300, vitalStamina: 1300, offense: 1000, defense: 960, magic: 2200, resistance: 2000, speed: 1120 },
+        growth: { hp: 33, mp: 44, stamina: 30, vitalStamina: 30, offense: 24, defense: 24, magic: 50, resistance: 46, speed: 28 },
+        scalingMultiplier: 2.3
     },
     "dread fallen demon": {
-        base: { hp: 2300, mp: 3400, stamina: 2100, vitalStamina: 2100, offense: 1700, defense: 1680, magic: 3800, resistance: 3500, speed: 2000 },
-        growth: { hp: 47, mp: 66, stamina: 43, vitalStamina: 43, offense: 35, defense: 34, magic: 76, resistance: 70, speed: 41 },
-        scalingMultiplier: 2.65
+        base: { hp: 4200, mp: 6000, stamina: 3700, vitalStamina: 3700, offense: 3000, defense: 2900, magic: 6800, resistance: 6200, speed: 3600 },
+        growth: { hp: 74, mp: 104, stamina: 66, vitalStamina: 66, offense: 54, defense: 52, magic: 122, resistance: 112, speed: 64 },
+        scalingMultiplier: 3.2
     },
     "abyssal fallen demon": {
-        base: { hp: 7000, mp: 11400, stamina: 6500, vitalStamina: 6500, offense: 5600, defense: 5200, magic: 12800, resistance: 12100, speed: 6700 },
-        growth: { hp: 96, mp: 172, stamina: 88, vitalStamina: 88, offense: 78, defense: 74, magic: 190, resistance: 182, speed: 92 },
-        scalingMultiplier: 3.8
+        base: { hp: 11600, mp: 16400, stamina: 10400, vitalStamina: 10400, offense: 9000, defense: 8600, magic: 17800, resistance: 17000, speed: 9400 },
+        growth: { hp: 156, mp: 232, stamina: 140, vitalStamina: 140, offense: 124, defense: 120, magic: 256, resistance: 246, speed: 136 },
+        scalingMultiplier: 4.15
     },
 
     "god": {
