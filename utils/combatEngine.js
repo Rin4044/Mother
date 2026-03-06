@@ -171,8 +171,13 @@ function calculateDamage(attacker, defender, skill) {
         defenseStat = abyssAttack ? 0 : getEffectiveStat(defender, 'resistance');
     }
 
-    if (attackStat <= 0)
-        return 0;
+    if (attackStat <= 0) {
+        return {
+            damage: 0,
+            isCrit: false,
+            critMultiplier: 1
+        };
+    }
 
     const multiplier = 1 + ((skill.power || 0) * 0.1);
 
@@ -197,10 +202,40 @@ function calculateDamage(attacker, defender, skill) {
 
     const reducedDamage = rawDamage * (100 / (100 + defenseStat));
     let finalDamage = Math.max(0, Math.floor(reducedDamage));
+    const critInfo = rollCritical(attacker, skill);
+    if (critInfo.isCrit) {
+        finalDamage = Math.max(0, Math.floor(finalDamage * critInfo.critMultiplier));
+    }
     if (hasEffect(attacker, IMMORTALITY_CONFIG.exhaustionEffectType)) {
         finalDamage = Math.max(0, Math.floor(finalDamage * IMMORTALITY_CONFIG.outgoingMultiplierWhileExhausted));
     }
-    return finalDamage;
+    return {
+        damage: finalDamage,
+        isCrit: critInfo.isCrit,
+        critMultiplier: critInfo.critMultiplier
+    };
+}
+
+function rollCritical(attacker, skill) {
+    const effectMain = String(skill?.effect_type_main || '').trim();
+    if (effectMain !== 'Physical' && effectMain !== 'Magic') {
+        return { isCrit: false, critMultiplier: 1 };
+    }
+
+    const passives = attacker?.rulerPassives || {};
+    const critChancePct = Math.max(0, Math.min(100, Number(passives.critChancePct) || 0));
+    if (critChancePct <= 0) {
+        return { isCrit: false, critMultiplier: 1 };
+    }
+
+    const isCrit = (Math.random() * 100) < critChancePct;
+    if (!isCrit) {
+        return { isCrit: false, critMultiplier: 1 };
+    }
+
+    const critDamagePct = Math.max(0, Math.min(500, Number(passives.critDamagePct) || 50));
+    const critMultiplier = 1 + (critDamagePct / 100);
+    return { isCrit: true, critMultiplier };
 }
 
 function getHpRatio(entity) {
@@ -325,7 +360,7 @@ function startCombat({ attackerStats, defenderStats, attackerCombat, defenderCom
         };
     }
 
-    const damage = calculateDamage(attackerStats, defenderStats, skill);
+    const damageResult = calculateDamage(attackerStats, defenderStats, skill);
     ensureCombatRuntimeState(updatedAttacker);
 
     const updatedDefender = {
@@ -335,7 +370,7 @@ function startCombat({ attackerStats, defenderStats, attackerCombat, defenderCom
     ensureCombatRuntimeState(updatedDefender);
 
     const abyssAttack = isAbyssAttack(skill);
-    const finalDamage = applyIncomingDamage(updatedDefender, damage, {
+    const finalDamage = applyIncomingDamage(updatedDefender, damageResult.damage, {
         ignoreMitigation: abyssAttack,
         ignoreShield: abyssAttack
     });
@@ -344,6 +379,8 @@ function startCombat({ attackerStats, defenderStats, attackerCombat, defenderCom
     return {
         totalDamage: finalDamage,
         skillUsed: true,
+        isCrit: damageResult.isCrit,
+        critMultiplier: damageResult.critMultiplier,
         updatedAttacker,
         updatedDefender
     };
@@ -509,16 +546,19 @@ function executeTurn(state, skillA, skillPoolB) {
         if (applyVitalDeath(state.entityA) && !tryTriggerImmortality(state.entityA, log, false))
             return { victory: false, defeat: true, log, state, playerSkillUses, playerDamageDone, statusDamageTaken, endTurnRegen };
 
-        const damage = calculateDamage(state.entityA, state.entityB, skillA);
+        const damageResult = calculateDamage(state.entityA, state.entityB, skillA);
         const abyssAttack = isAbyssAttack(skillA);
-        const finalDamage = applyIncomingDamage(state.entityB, damage, {
+        const finalDamage = applyIncomingDamage(state.entityB, damageResult.damage, {
             ignoreMitigation: abyssAttack,
             ignoreShield: abyssAttack
         });
         playerSkillUses++;
         playerDamageDone += finalDamage;
 
-        log.push(`Used ${skillA.name} -> ${finalDamage} damage`);
+        const critSuffix = damageResult.isCrit
+            ? ` (CRIT x${damageResult.critMultiplier.toFixed(2)})`
+            : '';
+        log.push(`Used ${skillA.name} -> ${finalDamage} damage${critSuffix}`);
 
         applyOnHitRulerPassives(state.entityA, state.entityB, finalDamage, log, false);
         applyOnDamagedRulerPassives(state.entityB, finalDamage, log, true);
@@ -544,14 +584,17 @@ function executeTurn(state, skillA, skillPoolB) {
         if (applyVitalDeath(state.entityB) && !tryTriggerImmortality(state.entityB, log, true))
             return { victory: true, defeat: false, log, state, playerSkillUses, playerDamageDone, statusDamageTaken, endTurnRegen };
 
-        const damage = calculateDamage(state.entityB, state.entityA, skillB);
+        const damageResult = calculateDamage(state.entityB, state.entityA, skillB);
         const abyssAttack = isAbyssAttack(skillB);
-        const finalDamage = applyIncomingDamage(state.entityA, damage, {
+        const finalDamage = applyIncomingDamage(state.entityA, damageResult.damage, {
             ignoreMitigation: abyssAttack,
             ignoreShield: abyssAttack
         });
 
-        log.push(`Enemy used ${skillB.name} -> ${finalDamage} damage`);
+        const critSuffix = damageResult.isCrit
+            ? ` (CRIT x${damageResult.critMultiplier.toFixed(2)})`
+            : '';
+        log.push(`Enemy used ${skillB.name} -> ${finalDamage} damage${critSuffix}`);
 
         applyOnHitRulerPassives(state.entityB, state.entityA, finalDamage, log, true);
         applyOnDamagedRulerPassives(state.entityA, finalDamage, log, false);

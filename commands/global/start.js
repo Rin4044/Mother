@@ -18,7 +18,7 @@ const STARTER_SKILLS_BY_RACE = {
         { skillId: 54, level: 1 },  // Stealth
         { skillId: 89, level: 1 }   // MP Recovery Speed
     ],
-    human: [
+    'human': [
         { skillId: 80, level: 1 },  // Hit
         { skillId: 117, level: 1 }, // Strength
         { skillId: 121, level: 1 }, // Sturdy
